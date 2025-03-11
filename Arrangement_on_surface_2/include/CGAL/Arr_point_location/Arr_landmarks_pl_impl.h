@@ -58,14 +58,16 @@ Arr_landmarks_point_location<Arr, Gen>::locate(const Point_2& p) const {
     out_obj = _walk_from_face(*f, landmark_point, p, crossed_edges);
   else CGAL_error_msg("lm_location_obj of an unknown type.");
 
-  if (const auto* f = std::get_if<Face_const_handle>(&out_obj)) {
+  if (const auto* fp = std::get_if<Face_const_handle>(&out_obj)) {
+    const auto& f = *fp;
     // If we reached here, we did not locate the query point in any of the
     // holes inside the current face, so we conclude it is contained in this
     // face. However, we first have to check whether the query point coincides
     // with any of the isolated vertices contained inside this face.
     auto equal = m_traits->equal_2_object();
-    for (auto iso_verts_it = (*f)->isolated_vertices_begin();
-         iso_verts_it != (*f)->isolated_vertices_end(); ++iso_verts_it) {
+    // Do not use 'auto' to define the iterator, as MSVC2017 complains.
+    for (Isolated_vertex_const_iterator iso_verts_it = f->isolated_vertices_begin();
+         iso_verts_it != f->isolated_vertices_end(); ++iso_verts_it) {
       if (equal(p, iso_verts_it->point())) {
         Vertex_const_handle ivh = iso_verts_it;
         return make_result(ivh);
@@ -450,7 +452,8 @@ _walk_from_face(Face_const_handle face, const Point_2& np, const Point_2& p,
       // its holes).
       cv_is_contained_in_seg = false;
       auto new_face = face;
-      for (auto inner_ccb_iter = face->inner_ccbs_begin();
+      // Do not use 'auto' to define the iterator, as MSVC2017 complains.
+      for (Inner_ccb_const_iterator inner_ccb_iter = face->inner_ccbs_begin();
            inner_ccb_iter != face->inner_ccbs_end(); ++inner_ccb_iter) {
         bool is_on_edge;
         bool is_target;
@@ -493,7 +496,8 @@ _walk_from_face(Face_const_handle face, const Point_2& np, const Point_2& p,
       // We know that p is not located inside the current face. We therefore
       // look for an edge on its outer boundary that intersects seg.
       auto new_face = face;
-      for (auto outer_ccb_iter = face->outer_ccbs_begin();
+      // Do not use 'auto' to define the iterator, as MSVC2017 complains.
+      for (Inner_ccb_const_iterator outer_ccb_iter = face->outer_ccbs_begin();
            outer_ccb_iter != face->outer_ccbs_end(); ++outer_ccb_iter) {
         bool is_on_edge;
         bool is_target;
