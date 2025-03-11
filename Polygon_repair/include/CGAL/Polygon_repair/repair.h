@@ -92,7 +92,7 @@ Multipolygon_with_holes_2<Kernel, Container> repair(const Polygon_with_holes_2<K
 /// repairs multipolygon with holes `p` using the given rule
 /// \tparam Kernel parameter of the input and output polygons. Must be model of `ConstrainedDelaunayTriangulationTraits_2 `
 /// \tparam Container parameter of the input and output polygons
-///  \tparam Rule may be any rule
+/// \tparam Rule may be any \ref PkgPolygonRepairRules
 /// \pre If the rule is the `Union_rule` or `Non_zero_rule`, each polygon with hole must be free of self-intersections
 template <class Kernel, class Container, class Rule = Even_odd_rule>
 Multipolygon_with_holes_2<Kernel, Container> repair(const Multipolygon_with_holes_2<Kernel, Container>& p, Rule = Rule())
@@ -874,7 +874,7 @@ intersect(const Multipolygon_with_holes_2<Kernel,Container>& p)
 
 
 /// \ingroup PkgPolygonRepairFunctions
-/// Computes the intersection of two polygonal domains
+/// computes the intersection of two polygonal domains
 /// \tparam Kernel parameter of the output polygon. Must be model of `ConstrainedDelaunayTriangulationTraits_2 `
 /// \tparam Container parameter of the input and output polygons
 /// \tparam PA must be `Polygon_2<Kernel, Container>`, or `Polygon_with_holes_2<Kernel, Container>`, or `Multipolygon_with_holes_2<Kernel, Container>`
