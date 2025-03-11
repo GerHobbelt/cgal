@@ -299,38 +299,28 @@ EOF
     }
 }
 
-
-sub get_platform_operating_system($) {
-    my ($platform) = @_;
-    my $long_name = "";
+sub sort_pf {
+    my $platform_a = $a;
+    my $platform_b = $b;
+    my $platform = $platform_a;
     foreach (@available_platforms) {
-        if (short_pfname($_) eq $platform) {
-            $long_name = $_;
+        if (short_pfname($_) eq $a) {
+            $platform = $_;
             last;
         }
     }
-    if (open(PLATFORM_INFO, "results_${long_name}.info")) {
-        while (my $line = <PLATFORM_INFO>) {
-            chomp($line);
-            if ($line =~ /OS:\s*(.*?)$/) {
-                my $os = $1;
-                $os =~ s/"//g;
-                close(PLATFORM_INFO);
-                return $os;
-            }
+    $platform_a = $platform;
+    $platform_b = $b;
+    foreach (@available_platforms) {
+        if (short_pfname($_) eq $b) {
+            $platform = $_;
+            last;
         }
-        close(PLATFORM_INFO);
     }
-    return "";
-}
-
-sub sort_pf {
-    my $os_a = get_platform_operating_system($a);
-    my $os_b = get_platform_operating_system($b);
-    if ($os_a ne $os_b) {
-        return $os_a cmp $os_b;
-    }
-    return $a cmp $b;
+    $platform_b = $platform;
+    my $os_a = $platforms_info{$platform_a}->{operating_system} // '';
+    my $os_b = $platforms_info{$platform_b}->{operating_system} // '';
+    return $os_a cmp $os_b;
 }
 
 sub parse_platform($)
@@ -380,7 +370,6 @@ sub choose_platforms()
 {
     my (%platform_index, $pf);
 # List all platforms for which there are results
-    @available_platforms = list_platforms();
     my $index = 0;
 # Put all known platforms in a hash table.
     for ($index=0; $index < @known_platforms; $index += 1) {
@@ -418,37 +407,8 @@ sub choose_platforms()
     }
 }
 
-sub print_platform_descriptions()
-{
-    print OUTPUT <<'EOF';
-
-<h2><a name="platforms">Platform Description and Summary</a></h2>
-
-<table border="1" cellspacing="2" cellpadding="5" class="summary">
-<tr align="center">
-  <th colspan="2">Platform Name</th>
-  <th>Compiler</th>
-  <th>Operating System</th>
-  <th>Tester</th>
-  <th class="ok">y</th>
-  <th class="third_party_warning">t</th>
-  <th class="warning">w</th>
-  <th class="timeout">o</th>
-  <th class="error">n</th>
-  <th class="requirements">r</th>
-  <th>DEBUG?</th>
-  <th>CMake</th>
-  <th>BOOST</th>
-  <th>MPFR</th>
-  <th>GMP</th>
-  <th>QT</th>
-  <th>LEDA</th>
-  <th>CXXFLAGS</th>
-  <th>LDFLAGS</th>
-</tr>
-EOF
-    my ($platform_num, $pf)=(0);
-    foreach $pf (@platforms_to_do) {
+sub read_platform_info {
+    foreach my $pf (@available_platforms) {
         my $platform_info;
         if (open (PLATFORM_JSON, "<results_${pf}.json")) { ## read the json file of the platform
             local $/;
@@ -460,6 +420,7 @@ EOF
         }
         elsif (open (PLATFORM_INFO, "<results_${pf}.info")) { ## if the json file does not exist, read the old .info file
             $_ = <PLATFORM_INFO>; # CGAL_VERSION
+            chomp(my $platform_name = <PLATFORM_INFO>);
             chomp(my $compiler = <PLATFORM_INFO>);
             chomp(my $operating_system = <PLATFORM_INFO>);
             chomp(my $tester_name = <PLATFORM_INFO>);
@@ -472,7 +433,7 @@ EOF
                 chomp($versions_and_flags[$index] = <PLATFORM_INFO>);
             }
             $platform_info = {
-                name => $pf,
+                platform_name => $platform_name,
                 compiler => $compiler,
                 operating_system => $operating_system,
                 tester_name => $tester_name,
@@ -512,11 +473,44 @@ EOF
             $platform_info->{third_party_libs} = \@tpl_list;
             $platforms_info{$pf} = $platform_info;
         }
+        $platform_is_64bits{$pf} = ! ($pf =~ m/32/);
+        $platform_is_optimized{$pf} = ($platform_info->{CXXFLAGS} =~ m|([-/]x?O[1-9])|);
+    }
+}
+
+sub print_platform_descriptions()
+{
+    print OUTPUT <<'EOF';
+
+<h2><a name="platforms">Platform Description and Summary</a></h2>
+
+<table border="1" cellspacing="2" cellpadding="5" class="summary">
+<tr align="center">
+  <th colspan="2">Platform Name</th>
+  <th>Compiler</th>
+  <th>Operating System</th>
+  <th>Tester</th>
+  <th class="ok">y</th>
+  <th class="third_party_warning">t</th>
+  <th class="warning">w</th>
+  <th class="timeout">o</th>
+  <th class="error">n</th>
+  <th class="requirements">r</th>
+  <th>DEBUG?</th>
+  <th>CMake</th>
+  <th>BOOST</th>
+  <th>MPFR</th>
+  <th>GMP</th>
+  <th>QT</th>
+  <th>LEDA</th>
+  <th>CXXFLAGS</th>
+  <th>LDFLAGS</th>
+</tr>
+EOF
+    my $platform_num = 0;
+    foreach my $pf (@platforms_to_do) {
+        my $platform_info = $platforms_info{$pf};
         my $pf_num_plus_one = $platform_num + 1;
-        # my $pf_short = join('_',parse_platform_2($pf));
-        (my $pf_short) = ($pf =~ m/_(.*)/);
-        ($platform_is_64bits{$pf}) = ! ($pf =~ m/32/);
-        ($platform_is_optimized{$pf}) = ($platform_info->{CXXFLAGS} =~ m|([-/]x?O[1-9])|);
         my $county = $testresults[$platform_num]->{"y"};
         my $countt = $testresults[$platform_num]->{"t"};
         my $countw = $testresults[$platform_num]->{"w"};
@@ -527,7 +521,7 @@ EOF
         print OUTPUT <<~EOF;
         <tr>
           <td><a name="platform$pf_num_plus_one">$pf_num_plus_one</a></td>
-          <td><a href="$release_name/Installation/TestReport_$pf.gz">$pf_short</a></td>
+          <td><a href="$release_name/Installation/TestReport_$pf.gz">$platform_info->{platform_name}</a></td>
           <td>$platform_info->{compiler}</td>
           <td>$platform_info->{operating_system}</td>
           <td><a href="mailto:$platform_info->{tester_address}">$platform_info->{tester_name}</a></td>
@@ -661,6 +655,8 @@ sub main()
 #    init_known_platforms();
     chdir $testresult_dir or die;
     chdir $release_name or die;
+    @available_platforms = list_platforms();
+    read_platform_info();
     choose_platforms();
     chdir "..";
 
@@ -742,7 +738,7 @@ sub get_warnings_and_errors {
 }
 
 sub create_summary_page {
-    my $platform_options = join("\n", map { "<option value=\"$_\">$_</option>" } @platforms_to_do);
+    my $platform_options = join("\n", map { "<option value=\"$_\">$platforms_info{$_}->{platform_name}</option>" } @platforms_to_do);
     my $test_directory;
     my @letters = ('r', 'n', 'w', 'o');
     my $letters_options = join("\n", map { "<option value=\"$_\">$_</option>" } @letters);
