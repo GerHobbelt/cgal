@@ -6,6 +6,7 @@ computational geometry.
 
 CGAL Releases
 =============
+
 The primary vector of distribution of CGAL are source tarballs, released
 twice a year, announced on [the web site of CGAL](https://www.cgal.org/).
 
@@ -20,6 +21,7 @@ for usage guides and tutorials that will get you started smoothly.
 
 License
 =======
+
 See the file [LICENSE.md](LICENSE.md).
 
 CGAL Git Repository Layout
@@ -41,6 +43,7 @@ or `Triangulation_3`); however some packages serve special needs:
 
 More Information
 ================
+
 * [The CGAL web site](https://www.cgal.org/)
 * [Latest CGAL release documentation pages](https://doc.cgal.org/)
 * [Latest CGAL master documentation pages, updated once a week](https://cgal.geometryfactory.com/CGAL/doc/master/)
