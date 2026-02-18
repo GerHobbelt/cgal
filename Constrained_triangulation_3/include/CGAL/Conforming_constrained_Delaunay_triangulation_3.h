@@ -131,6 +131,9 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#if __has_include(<version>)
+#  include <version>
+#endif
 #if CGAL_CXX20 && __has_include(<ranges>)
 #  include <ranges>
 #endif
@@ -881,7 +884,7 @@ public:
     }
     {
       auto task_guard = CGAL::CDT_3_CDT_TASK_guard();
-      cdt_impl.restore_constrained_Delaunay();
+      cdt_impl.restore_constrained_Delaunay(parameters::get_parameter(np, internal_np::face_output_iterator));
       if(cdt_impl.debug().display_statistics()) {
         std::cout << "[timings] restored constrained Delaunay in " << task_guard.time_ms() << " ms\n";
         std::cout << "Number of vertices after CDT: " << cdt_impl.number_of_vertices() << "\n\n";
@@ -953,7 +956,7 @@ public:
         cdt_impl.insert_constrained_face(CGAL::make_range(first, last), false);
       }
       cdt_impl.restore_Delaunay();
-      cdt_impl.restore_constrained_Delaunay();
+      cdt_impl.restore_constrained_Delaunay(parameters::get_parameter(np, internal_np::face_output_iterator));
     } else {
       auto polygon_patch_map = get_parameter(np, internal_np::plc_face_id);
       static_assert(!std::is_same_v<decltype(polygon_patch_map), internal_np::Param_not_found>);
@@ -984,10 +987,9 @@ public:
       PMP::polygon_soup_to_polygon_mesh(std::move(rw_points), std::move(rw_polygons), surface_mesh,
                                         np.polygon_to_face_output_iterator(polygon_to_face_output_iterator));
 
-      Conforming_constrained_Delaunay_triangulation_3 ccdt{std::move(surface_mesh),
-                                                            CGAL::parameters::plc_face_id(plc_face_id_pmap)
-                                                                .do_self_intersection_tests(false)
-                                                                .geom_traits(cdt_impl.geom_traits())};
+      Conforming_constrained_Delaunay_triangulation_3 ccdt{
+          std::move(surface_mesh),
+          np.plc_face_id(plc_face_id_pmap).do_self_intersection_tests(false).geom_traits(cdt_impl.geom_traits())};
       *this = std::move(ccdt);
     }
   }
@@ -4034,7 +4036,8 @@ public:
     }
   }
 
-  void restore_constrained_Delaunay()
+  template <typename ...Args>
+  void restore_constrained_Delaunay(Args&&... args)
   {
     this->is_Delaunay = false;
     for(CDT_3_signed_index i = 0, end = static_cast <CDT_3_signed_index>(face_constraint_misses_subfaces.size()); i < end;
@@ -4097,7 +4100,27 @@ public:
     if(std::any_of(begin(face_data), end(face_data),
                    [](const auto& fd) { return fd.skip_face; }))
     {
-      CGAL_error_msg("Constrained Delaunay triangulation could not be restored: some faces could not be processed.");
+      std::vector<CDT_3_signed_index> failed_faces;
+      for(CDT_3_signed_index i = 0, end = static_cast<CDT_3_signed_index>(face_data.size()); i < end; ++i) {
+        if(face_data[i].skip_face) {
+          failed_faces.push_back(i);
+        }
+      }
+      if constexpr (sizeof...(args) >= 1) {
+        auto&& first_arg = std::get<0>(std::forward_as_tuple(std::forward<Args>(args)...));
+        if constexpr (is_named_function_parameter<decltype(first_arg)>) {
+          auto output_face_iterator =
+              parameters::get_parameter(std::forward<decltype(first_arg)>(first_arg), internal_np::face_output_iterator);
+          if constexpr(!std::is_same_v<CGAL::cpp20::remove_cvref_t<decltype(output_face_iterator)>,
+                                       internal_np::Param_not_found>)
+          {
+            std::copy(failed_faces.begin(), failed_faces.end(), output_face_iterator);
+            return;
+          }
+        }
+      }
+      // else:
+      throw Constrained_triangulation_insertion_exception(failed_faces);
     }
   }
 

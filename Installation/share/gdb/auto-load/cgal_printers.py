@@ -10,6 +10,7 @@ Auto-loaded via .debug_gdb_scripts section.
 """
 
 import re
+import os
 import gdb
 
 def base(val):
@@ -66,11 +67,13 @@ class CGALPointPrinterBase:
 
 
 class PointC3Printer(CGALPointPrinterBase):
+    """Pretty printer for CGAL::PointC3<any>"""
     def __init__(self, val):
         super().__init__(val, "PointC3")
 
 
 class Point3Printer(CGALPointPrinterBase):
+    """Pretty printer for CGAL::Point_3<any>"""
     def __init__(self, val):
         super().__init__(val, "Point_3")
 
@@ -129,4 +132,6 @@ def register_cgal_printer(printer):
 
 deregister_existing_cgal_printers()
 register_cgal_printer(cgal_lookup_function)
-print("CGAL pretty printers loaded (manual registration)")
+# Get the full path of this script file
+current_file = os.path.abspath(__file__)
+print(f"CGAL pretty printers auto-loaded from {current_file}")

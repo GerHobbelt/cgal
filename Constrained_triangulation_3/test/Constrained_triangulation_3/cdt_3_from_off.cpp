@@ -57,6 +57,9 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#if __has_include(<version>)
+#  include <version>
+#endif
 
 #if CGAL_CXX20 && __cpp_lib_concepts >= 201806L && __cpp_lib_ranges >= 201911L
 #  include <ranges>
@@ -122,8 +125,8 @@ Usage: cdt_3_from_off [options] input.off output.off
   --debug-geometric-errors: debug geometric error handling
   --debug-polygon-insertion: debug polygon insertion process
   --use-finite-edges-map: use a hash map for finite edges (default: false)
-  --use-epeck-for-normals/--no-use-epeck-for-normals: use exact kernel for normal computations (default: true)
-  --use-epeck-for-Steiner-points/--no-use-epeck-for-Steiner-points: use exact kernel for Steiner point computations (default: true)
+  --use-epeck-for-normals/--no-use-epeck-for-normals: use exact kernel for normal computations (default: false)
+  --use-epeck-for-Steiner-points/--no-use-epeck-for-Steiner-points: use exact kernel for Steiner point computations (default: false)
 
   --verbose/-V: verbose (can be used several times)
   --quiet: do not print anything
@@ -162,8 +165,8 @@ struct CDT_options
   bool        debug_geometric_errors              = false;
   bool        debug_polygon_insertion             = false;
   bool        use_finite_edges_map                = false;
-  bool        use_epeck_for_normals               = true;
-  bool        use_epeck_for_Steiner_points        = true;
+  bool        use_epeck_for_normals               = false;
+  bool        use_epeck_for_Steiner_points        = false;
   bool        call_is_valid                       = true;
   bool        bisect_failures                     = false;
   double      vertex_vertex_epsilon               = 0.; // 1e-14;
@@ -483,10 +486,10 @@ int merge_facets_region_growing(Mesh& mesh,
                                 double coplanar_polygon_max_angle,
                                 const std::string& dump_surface_mesh_after_merge_filename) {
   namespace np = CGAL::parameters;
-  int number_of_patches = CGAL::Polygon_mesh_processing::region_growing_of_planes_on_faces(
+  int number_of_patches = static_cast<int>(CGAL::Polygon_mesh_processing::region_growing_of_planes_on_faces(
       mesh, pmaps.patch_id_map,
       np::maximum_distance(coplanar_polygon_max_distance)
-         .maximum_angle(coplanar_polygon_max_angle));
+         .maximum_angle(coplanar_polygon_max_angle)));
   for(auto f: faces(mesh)) {
     if(get(pmaps.patch_id_map, f) < 0) {
       std::cerr << "warning: face " << f << " has no patch id! Reassign it to " << number_of_patches << '\n';
