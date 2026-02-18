@@ -12,6 +12,7 @@
 #ifndef CGAL_CONFORMING_CONSTRAINED_DELAUNAY_TRIANGULATION_3_H
 #define CGAL_CONFORMING_CONSTRAINED_DELAUNAY_TRIANGULATION_3_H
 
+#include <CGAL/IO/Color_ostream.h>
 #include <CGAL/license/Constrained_triangulation_3.h>
 
 #include <CGAL/Conforming_constrained_Delaunay_triangulation_3_fwd.h>
@@ -39,9 +40,12 @@
 #include <CGAL/Dynamic_property_map.h>
 #include <CGAL/enum.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Exception_ostream.h>
 #include <CGAL/exceptions.h>
 #include <CGAL/intersection_3.h>
+#include <CGAL/IO/Color_ostream.h>
 #include <CGAL/IO/Color.h>
+#include <CGAL/IO/Indenting_ostream.h>
 #include <CGAL/IO/io.h>
 #include <CGAL/Iterator_range.h>
 #include <CGAL/iterator.h>
@@ -74,6 +78,7 @@
 #include <CGAL/boost/graph/graph_traits_Triangulation_data_structure_2.h>
 #include <CGAL/boost/graph/graph_traits_Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/boost/graph/graph_traits_Constrained_triangulation_plus_2.h>
+#include <CGAL/utils.h>
 
 #ifndef CGAL_CDT_3_DISABLE_INPUT_CHECKS
 #  include <CGAL/Polygon_mesh_processing/self_intersections.h>
@@ -195,6 +200,26 @@ does_first_triangle_intersect_second_triangle_interior(const typename K::Triangl
                                                        const typename K::Triangle_3& t2,
                                                        const K& k)
 {
+  // if(do_intersect(t1, t2) == false)
+  //   return false;
+
+  // using Point_3 = typename K::Point_3;
+
+  // std::array<Point_3,3> tr1_points{ t1.vertex(0), t1.vertex(1), t1.vertex(2) };
+  // std::array<Point_3,3> tr2_points{ t2.vertex(0), t2.vertex(1), t2.vertex(2) };
+  // std::sort(tr1_points.begin(), tr1_points.end());
+  // std::sort(tr2_points.begin(), tr2_points.end());
+  // std::size_t nb_of_common_vertices = 0;
+  // std::set_intersection(
+  //     tr1_points.begin(), tr1_points.end(),
+  //     tr2_points.begin(), tr2_points.end(),
+  //     CGAL::Counting_output_iterator(&nb_of_common_vertices));
+  // if(nb_of_common_vertices >= 2)
+  //   return false;
+
+  // return true;
+
+
   typedef typename K::Point_3 Point_3;
 
   CGAL_kernel_precondition(!k.is_degenerate_3_object() (t1) );
@@ -239,11 +264,13 @@ does_first_triangle_intersect_second_triangle_interior(const typename K::Triangl
 
   auto comp = k.compare_xyz_3_object();
   auto sort_ptrs = [&comp](const Point_3* p1, const Point_3* p2) { return comp(*p1, *p2) == SMALLER; };
-  auto intersection_is_a_vertex_or_a_common_edge = [&]() {
-    CGAL_assume(nb_of_t1_vertices_in_the_line >= 0 && nb_of_t1_vertices_in_the_line <= 3);
+  auto intersection_is_a_common_edge = [&]() {
+    if(nb_of_t1_vertices_in_the_line < 2) return false;
+    CGAL_assume(nb_of_t1_vertices_in_the_line <= 3);
+    if(nb_of_t2_vertices_in_the_line < 2) return false;
+    CGAL_assume(nb_of_t2_vertices_in_the_line <= 3);
     std::sort(t1_vertices_in_the_line.data(), t1_vertices_in_the_line.data() + nb_of_t1_vertices_in_the_line,
               sort_ptrs);
-    CGAL_assume(nb_of_t2_vertices_in_the_line >= 0 && nb_of_t2_vertices_in_the_line <= 3);
     std::sort(t2_vertices_in_the_line.data(), t2_vertices_in_the_line.data() + nb_of_t2_vertices_in_the_line,
               sort_ptrs);
     std::size_t nb_of_common_vertices = 0;
@@ -251,7 +278,7 @@ does_first_triangle_intersect_second_triangle_interior(const typename K::Triangl
         t1_vertices_in_the_line.data(), t1_vertices_in_the_line.data() + nb_of_t1_vertices_in_the_line,
         t2_vertices_in_the_line.data(), t2_vertices_in_the_line.data() + nb_of_t2_vertices_in_the_line,
         CGAL::Counting_output_iterator(&nb_of_common_vertices), sort_ptrs);
-    return nb_of_common_vertices == 1 || nb_of_common_vertices == 2;
+    return nb_of_common_vertices == 2;
   };
 
   switch(dp)
@@ -351,7 +378,7 @@ does_first_triangle_intersect_second_triangle_interior(const typename K::Triangl
               push_to_t2_vertices_in_the_line(&a);
               push_to_t2_vertices_in_the_line(&b);
               push_to_t2_vertices_in_the_line(&c);
-              if(intersection_is_a_vertex_or_a_common_edge()) return false;
+              if(intersection_is_a_common_edge()) return false;
               return CGAL::Intersections::internal::do_intersect_coplanar(t1,t2,k);
             }
             default: // should not happen.
@@ -385,7 +412,7 @@ does_first_triangle_intersect_second_triangle_interior(const typename K::Triangl
   if(db == COPLANAR) push_to_t2_vertices_in_the_line(&b);
   if(dc == COPLANAR) push_to_t2_vertices_in_the_line(&c);
 
-  if(intersection_is_a_vertex_or_a_common_edge()) return false;
+  if(intersection_is_a_common_edge()) return false;
 
   switch(da)
   {
@@ -527,10 +554,6 @@ bool does_tetrahedron_intersect_triangle_interior(typename Kernel::Tetrahedron_3
 
   return false;
 }
-
-} // namespace CGAL
-
-namespace CGAL {
 
 #if CGAL_CXX20 && __cpp_lib_concepts >= 201806L && __cpp_lib_ranges >= 201911L
 template <typename Polygon, typename Kernel>
@@ -1153,7 +1176,6 @@ public:
   const CDT_3::Debug_options& debug() const  { return cdt_impl.debug(); }
 
   // Algorithmic switches and tolerances
-  void use_older_cavity_algorithm(bool b)           { cdt_impl.use_older_cavity_algorithm(b); }
   void use_finite_edges_map(bool b)                 { cdt_impl.use_finite_edges_map(b); }
   void set_segment_vertex_epsilon(double eps)       { cdt_impl.set_segment_vertex_epsilon(eps); }
 
@@ -1376,8 +1398,9 @@ protected:
     {
       const auto point = self->point(v_Steiner);
       if(!self->cdt_2_are_initialized) return;
-      for(const auto& [_, poly_id] : CGAL::make_range(self->incident_faces_to_polyline.equal_range(constraint))) {
-        auto& non_const_cdt_2 = self->non_const_face_cdt_2(poly_id);
+      for(const auto& [_, polygon_id] : CGAL::make_range(self->incident_faces_to_polyline.equal_range(constraint))) {
+        if(self->face_data[polygon_id].skip_face) continue;
+        auto& non_const_cdt_2 = self->non_const_face_cdt_2(polygon_id);
         const auto& cdt_2 = non_const_cdt_2;
 
         auto opt_edge = self->edge_of_cdt_2(cdt_2, va, vb);
@@ -1426,7 +1449,7 @@ protected:
           fc->info().is_edge_also_in_3d_triangulation.set(other_edge.first->info().is_edge_also_in_3d_triangulation.test(other_edge.second));
         } while(++fc != fc_begin);
 
-        self->face_constraint_misses_subfaces_set(poly_id);
+        self->face_constraint_misses_subfaces_set(polygon_id);
       }
       conforming_dt_visitor.insert_Steiner_point_on_constraint(constraint, va, vb, v_Steiner);
     }
@@ -1543,10 +1566,10 @@ public:
       const auto [outside_cell, outside_face_index] = outside_facet;
       const auto mirror_facet = this->mirror_facet(outside_facet);
       if(outside_cell->ccdt_3_data().is_facet_constrained(outside_face_index)) {
-        const auto poly_id = outside_cell->ccdt_3_data().face_constraint_index(outside_face_index);
-        const CDT_2& cdt_2 = face_cdt_2(poly_id);
+        const auto polygon_id = outside_cell->ccdt_3_data().face_constraint_index(outside_face_index);
+        const CDT_2& cdt_2 = face_cdt_2(polygon_id);
         const auto f2d = outside_cell->ccdt_3_data().face_2(cdt_2, outside_face_index);
-        set_facet_constrained(mirror_facet, poly_id, f2d);
+        set_facet_constrained(mirror_facet, polygon_id, f2d);
       }
     }
 
@@ -1830,6 +1853,9 @@ public:
     auto& border = borders.emplace_back();
     border.reserve(std::size(vertex_handles));
     const auto polygon_constraint_id = face_index.value_or(this->face_data.size() - 1);
+    if(this->debug().input_faces()) {
+      std::cerr << "insert_constrained_face: new polygon_constraint_id: " << polygon_constraint_id << '\n';
+    }
     do {
       const auto va = *circ;
       ++circ;
@@ -1848,6 +1874,10 @@ public:
     } while(circ != circ_end);
 
     if(this->debug().input_faces()) {
+      for(auto [c_id, is_reversed] : border) {
+        std::cerr << "  - edge on constraint c_id #" << c_id.index()
+                  << (is_reversed ? " (reversed)" : "") << '\n';
+      }
       std::vector<std::vector<Vertex_handle>> single_polygon{std::vector(vertex_handles.begin(), vertex_handles.end())};
       dump_face_polygons(single_polygon, polygon_constraint_id,
                          "dump-input-face-" + std::to_string(polygon_constraint_id) + "_polygon_" +
@@ -1857,9 +1887,6 @@ public:
     if(!face_index.has_value()) {
       // Face_data already created above with emplace_back
       face_constraint_misses_subfaces.resize(face_data.size());
-    }
-    if(this->debug().input_faces()) {
-      std::cerr << "insert_constrained_face return the polygon_constraint_id: " << polygon_constraint_id << '\n';
     }
     return polygon_constraint_id;
   }
@@ -2104,7 +2131,7 @@ private:
 
   void set_mark(Vertex_handle v, Vertex_marker m) {
     if(this->debug().regions()) {
-      std::cerr << " set_mark(" << this->display_vert(v) << ", ";
+      std::cerr << "set_mark(" << this->display_vert(v) << ", ";
       switch(m) {
         case Vertex_marker::CLEAR: std::cerr << "CLEAR"; break;
         case Vertex_marker::REGION_BORDER: std::cerr << "REGION_BORDER"; break;
@@ -2221,6 +2248,11 @@ private:
                 }
               }
             }
+          } else {
+            std::cerr << "ERROR: edge between "
+                      << tr().point(va) << " and "
+                      << tr().point(vb)
+                      << " is not a known constraint of the CDT_3.\n";
           }
 
           auto vh_2d = it == end ? first_2d : insert_vertex_in_cdt_2(vb);
@@ -2405,9 +2437,12 @@ private:
     Tri triangle;
   };
 
-  template <typename Fh_region>
-  int does_edge_interior_intersect_region(Cell_handle cell, int index_vc, int index_vd,
-                                          const CDT_2& cdt_2, const Fh_region& fh_region)
+  template <typename Fh_region, typename Vertices_container, typename Edges_container>
+  std::pair<int, std::array<Vertex_handle, 3>>
+  does_edge_interior_intersect_region(Cell_handle cell, int index_vc, int index_vd,
+                                      const CDT_2& cdt_2, const Fh_region& fh_region,
+                                      const Vertices_container& region_vertices,
+                                      const Edges_container& border_edges_set)
   {
     auto orientation = tr().geom_traits().orientation_3_object();
     const auto vc = cell->vertex(index_vd);
@@ -2435,28 +2470,128 @@ private:
            orientation(pc, pd, t1, t2) != opc &&
            orientation(pc, pd, t2, t0) != opc)
         {
-          return static_cast<int>(opc);
+          return {static_cast<int>(opc), {v0, v1, v2}};
         }
       }
     }
-    return 0;
+
+    // Coplanar case:
+    //   check if both edge vertices are in the region and edge is not a border edge of the region
+    if(region_vertices.count(vc) > 0 && region_vertices.count(vd) > 0 &&
+       border_edges_set.count(CGAL::make_sorted_pair(vc, vd)) == 0)
+    {
+      // Call does_coplanar_edge_interior_intersect_region directly
+      auto orientation_2d = cdt_2.geom_traits().orientation_2_object();
+
+      const auto p = pc;
+      const auto q = pd;
+
+      typename CDT_2::Locate_type lt_p;
+      int index_p;
+      auto fh_p = cdt_2.locate(p, lt_p, index_p);
+      CGAL_assume(lt_p == CDT_2::VERTEX);
+
+      typename CDT_2::Locate_type lt_q;
+      int index_q;
+      auto fh_q = cdt_2.locate(q, lt_q, index_q);
+      CGAL_assume(lt_q == CDT_2::VERTEX);
+
+      auto vp_2d = fh_p->vertex(index_p);
+      auto vq_2d = fh_q->vertex(index_q);
+
+      auto line_face_circulator = cdt_2.line_walk(p, q, fh_p);
+      auto start = line_face_circulator;
+      CGAL_assertion(line_face_circulator == nullptr || start->has_vertex(vp_2d));
+      if(line_face_circulator != nullptr) do {
+        typename CDT_2::Face_handle fh = line_face_circulator;
+
+        // We want a face:
+        //  - of the region
+        //  - and intersected in its interior by the edge (p,q).
+
+        if(false == fh->info().is_in_region) {
+          continue;
+        }
+
+        auto pq_is_collinear_to_triangle_edge = [&]() {
+          const auto a = cdt_2.point(fh->vertex(0));
+          const auto b = cdt_2.point(fh->vertex(1));
+          const auto c = cdt_2.point(fh->vertex(2));
+
+          const auto nb_of_collinear = static_cast<int>(orientation_2d(p, q, a) == CGAL::COLLINEAR) +
+                                        static_cast<int>(orientation_2d(p, q, b) == CGAL::COLLINEAR) +
+                                        static_cast<int>(orientation_2d(p, q, c) == CGAL::COLLINEAR);
+          return nb_of_collinear >= 2;
+        };
+
+        if(pq_is_collinear_to_triangle_edge()) {
+          continue;
+        }
+
+        auto fh_incident_to_p_or_q_but_its_interior_does_not_intersect_pq = [&]() {
+          int i = -1;
+          auto seg_v1 = vp_2d;
+          auto seg_v2 = vq_2d;
+          if(fh->has_vertex(vq_2d, i)) {
+            std::swap(seg_v1, seg_v2);
+          } else {
+            (void)fh->has_vertex(vp_2d, i);
+          }
+
+          if(i < 0)
+            return false;
+
+          // here fh has exactly one of the two edge vertices: seg_v1
+          // then the segment must intersect the opposite edge of the triangle
+
+          const auto p = cdt_2.point(seg_v1);
+          const auto q = cdt_2.point(seg_v2);
+
+          const auto o1 = orientation_2d(p, q, cdt_2.point(fh->vertex(cdt_2.cw(i))));
+          const auto o2 = orientation_2d(p, q, cdt_2.point(fh->vertex(cdt_2.ccw(i))));
+          CGAL_assertion(o1 != CGAL::COLLINEAR && o2 != CGAL::COLLINEAR);
+          return o1 == o2;
+        };
+
+        if(fh_incident_to_p_or_q_but_its_interior_does_not_intersect_pq()) {
+          continue;
+        }
+
+        if(this->debug().regions()) {
+          std::cerr << "Edge interior intersects region in face with vertices:\n  "
+                    << IO::oformat(fh->vertex(0)->info().vertex_handle_3d, with_point_and_info) << "\n  "
+                    << IO::oformat(fh->vertex(1)->info().vertex_handle_3d, with_point_and_info) << "\n  "
+                    << IO::oformat(fh->vertex(2)->info().vertex_handle_3d, with_point_and_info) << "\n";
+        }
+
+        return {1,
+                {fh->vertex(0)->info().vertex_handle_3d, fh->vertex(1)->info().vertex_handle_3d,
+                  fh->vertex(2)->info().vertex_handle_3d}};
+      } while(false == line_face_circulator->has_vertex(vq_2d) && ++line_face_circulator != start);
+    } // End of if(region_vertices.count(vc) > 0 && region_vertices.count(vd) > 0 &&
+      //           border_edges_set.count(CGAL::make_sorted_pair(vc, vd)) == 0)
+
+    return {0, {}};
   }
 
   struct Search_first_intersection_result_type {
     Edge intersecting_edge;
     Edge border_edge;
+    std::array<Vertex_handle, 3> triangle_vertices;
   };
 
   // Given a region and a border edge of it, returns an edge in the link of the
   // border edge that intersects the region.
   // The returned edge has its first vertex above the region.
-  template <typename Fh_region, typename Edges_container>
+  template <typename Fh_region, typename Edges_container, typename Vertices_container>
   std::optional<Search_first_intersection_result_type>
   search_first_intersection(CDT_3_signed_index /*face_index*/,
                             const CDT_2& cdt_2,
                             const Fh_region& fh_region,
-                            const Edges_container& border_edges)
+                            const Edges_container& border_edges,
+                            const Vertices_container& region_vertices)
   {
+    const auto border_edges_set = make_unordered_edge_set_as_pairs_of_vertex_handles(border_edges);
     for(const auto border_edge: border_edges) {
       const auto [c, i, j] = border_edge;
       const Vertex_handle va_3d = c->vertex(i);
@@ -2475,12 +2610,14 @@ private:
 
         if(is_marked(cell_circ->vertex(index_vc), Vertex_marker::REGION_BORDER)) continue;
         if(is_marked(cell_circ->vertex(index_vd), Vertex_marker::REGION_BORDER)) continue;
-        int cd_intersects_region = does_edge_interior_intersect_region(cell_circ, index_vc, index_vd, cdt_2, fh_region);
+        auto [cd_intersects_region, triangle_vertices] =
+            does_edge_interior_intersect_region(cell_circ, index_vc, index_vd, cdt_2, fh_region,
+                                                region_vertices, border_edges_set);
         if(cd_intersects_region == 1) {
-          return Search_first_intersection_result_type{ Edge{cell_circ, index_vc, index_vd}, border_edge };
+          return Search_first_intersection_result_type{ Edge{cell_circ, index_vc, index_vd}, border_edge, triangle_vertices };
         }
         if(cd_intersects_region == -1) {
-          return Search_first_intersection_result_type{ Edge{cell_circ, index_vd, index_vc}, border_edge };
+          return Search_first_intersection_result_type{ Edge{cell_circ, index_vd, index_vc}, border_edge, triangle_vertices };
         }
       } while(++cell_circ != end);
     }
@@ -2585,6 +2722,20 @@ private:
     return accumulated_normal;
   }
 
+  template <typename Edge_container>
+  auto make_unordered_edge_set_as_pairs_of_vertex_handles(const Edge_container& edges) const
+  {
+    using Ordered_pair = std::pair<Vertex_handle, Vertex_handle>;
+    using Hash = boost::hash<Ordered_pair>;
+    CGAL::unordered_flat_set<Ordered_pair, Hash> edge_set;
+    edge_set.reserve(edges.size());
+    for(const auto& edge : edges) {
+      auto [va, vb] = tr().vertices(edge);
+      edge_set.insert(make_sorted_pair(va, vb));
+    }
+    return edge_set;
+  }
+
   // -------------------------
   // construct_cavities
   // -------------------------
@@ -2594,328 +2745,254 @@ private:
                           int region_index,
                           const CDT_2& cdt_2,
                           const Fh_region& fh_region,
-                          const Vertices_container& region_border_vertices,
                           const Vertices_container& region_vertices,
                           Edge first_intersecting_edge,
-                          Edges_container border_edges)
+                          const std::array<Vertex_handle, 3>& first_intersected_triangle_vertices,
+                          const Edges_container border_edges)
   {
     // outputs
     struct Outputs
     {
       std::vector<Edge> intersecting_edges;
-      std::set<Cell_handle> intersecting_cells;
+      std::vector<std::array<Vertex_handle, 3>> intersected_triangles;
+      std::vector<Cell_handle> intersecting_cells;
       std::vector<Vertex_handle> vertices_of_upper_cavity;
       std::vector<Vertex_handle> vertices_of_lower_cavity;
       std::vector<Facet> facets_of_upper_cavity;
       std::vector<Facet> facets_of_lower_cavity;
     } outputs{
-        {}, {}, {region_vertices.begin(), region_vertices.end()}, {region_vertices.begin(), region_vertices.end()},
+        {}, {}, {}, {region_vertices.begin(), region_vertices.end()}, {region_vertices.begin(), region_vertices.end()},
         {}, {}};
 
-    auto& [intersecting_edges, intersecting_cells, vertices_of_upper_cavity, vertices_of_lower_cavity,
-           facets_of_upper_cavity, facets_of_lower_cavity] = outputs;
+    auto& [intersecting_edges, intersected_triangles, intersecting_cells, vertices_of_upper_cavity,
+           vertices_of_lower_cavity, facets_of_upper_cavity, facets_of_lower_cavity] = outputs;
 
     // to avoid "warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]""
-    auto& vertices_of_upper_cavity_ = vertices_of_upper_cavity;
-    auto& vertices_of_lower_cavity_ = vertices_of_lower_cavity;
     const auto& cr_intersecting_cells = intersecting_cells;
+
+    const auto border_edges_set = make_unordered_edge_set_as_pairs_of_vertex_handles(border_edges);
 
     std::set<std::pair<Vertex_handle, Vertex_handle>> non_intersecting_edges_set;
 
-    if constexpr (cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
-      expensive_debug_dump_tetrahedra_intersect_region(face_index, region_index, cdt_2, fh_region);
+    detect_edges_and_cells_intersecting_region(face_index, region_index, cdt_2, fh_region, region_vertices,
+                                               border_edges_set, first_intersecting_edge,
+                                               first_intersected_triangle_vertices, intersecting_edges,
+                                               intersected_triangles, intersecting_cells, non_intersecting_edges_set);
+    if(this->debug().regions()) {
+      std::stringstream filename;
+      filename << "dump_non_intersecting_edges_region_" << face_index << "_" << region_index << ".polylines.txt";
+      std::ofstream non_intersecting_edges_file(filename.str());
+      non_intersecting_edges_file.precision(17);
+      for(const auto& edge : non_intersecting_edges_set) {
+        non_intersecting_edges_file << "2    ";
+        non_intersecting_edges_file << tr().point(edge.first) << "  ";
+        non_intersecting_edges_file << tr().point(edge.second) << "\n";
+      }
+      filename.str("");
+      filename << "dump_intersecting_edges_region_" << face_index << "_" << region_index << ".polylines.txt";
+      std::ofstream intersecting_edges_file(filename.str());
+      intersecting_edges_file.precision(17);
+      for(const auto& [c, i, j] : intersecting_edges) {
+        intersecting_edges_file << "2    ";
+        intersecting_edges_file << tr().point(c->vertex(i)) << "  ";
+        intersecting_edges_file << tr().point(c->vertex(j)) << "\n";
+      }
     }
-
-    detect_edges_and_cells_intersecting_region(face_index, region_index, cdt_2, fh_region, region_border_vertices,
-                                               first_intersecting_edge, intersecting_edges, intersecting_cells,
-                                               non_intersecting_edges_set);
-    if(this->use_older_cavity_algorithm()) {
-      process_older_cavity_algorithm(intersecting_edges, cr_intersecting_cells, vertices_of_upper_cavity,
-                                     vertices_of_lower_cavity, facets_of_upper_cavity, facets_of_lower_cavity);
-    } // older algorithm
+    const std::set<Cell_handle> cr_intersecting_cells_set{cr_intersecting_cells.begin(), cr_intersecting_cells.end()};
+    if constexpr(cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
+        expensive_debug_dump_tetrahedra_intersect_region(face_index, region_index, cdt_2, fh_region, region_vertices,
+                                                         border_edges_set, cr_intersecting_cells_set);
+    }
 
     // those facets are viewed from the outside of the cavity
     const std::set<Facet> facets_of_border = std::invoke([&] {
       std::set<Facet> facets_of_border;
-      if(this->use_newer_cavity_algorithm()) {
-        for(auto c : cr_intersecting_cells) {
-          for(int i = 0; i < 4; ++i) {
-            auto n = c->neighbor(i);
-            if(cr_intersecting_cells.count(n) == 0) {
-              facets_of_border.emplace(n, n->index(c));
-            }
+      for(auto c : cr_intersecting_cells) {
+        for(int i = 0; i < 4; ++i) {
+          auto n = c->neighbor(i);
+          if(cr_intersecting_cells_set.count(n) == 0) {
+            facets_of_border.emplace(n, n->index(c));
           }
         }
       }
       return facets_of_border;
     });
-    if(this->use_newer_cavity_algorithm()) {
 
-      // create a union-find of the vertices of the cavity (but those on the region border)
-      Union_find<Vertex_handle> vertices_of_cavity_union_find;
-      using Union_find_handle = typename Union_find<Vertex_handle>::handle;
-      Unique_hash_map<Vertex_handle, Union_find_handle> vertices_of_cavity_handles;
-      for(auto c: cr_intersecting_cells) {
-        for(auto v : tr().vertices(c)) {
-          if(!is_marked(v)) {
-            set_mark(v, Vertex_marker::CAVITY);
-            vertices_of_cavity_handles[v] = vertices_of_cavity_union_find.make_set(v);
-          }
+    for(auto c: cr_intersecting_cells) {
+      for(auto v : tr().vertices(c)) {
+        if(!is_marked(v)) {
+          set_mark(v, Vertex_marker::CAVITY);
         }
       }
+    }
 
-      if(this->debug().regions()) {
-        std::cerr << "...use edges of the border facets to unify sets\n";
-      }
-      for(auto facet: facets_of_border) {
-        auto vertices = tr().vertices(facet);
-        for(int i = 0; i < 3; ++i) {
-          auto v1 = vertices[i];
-          auto v2 = vertices[(i + 1) % 3];
-          if(is_marked(v1, Vertex_marker::CAVITY) && is_marked(v2, Vertex_marker::CAVITY)) {
-            vertices_of_cavity_union_find.unify_sets(vertices_of_cavity_handles[v1],
-                                                     vertices_of_cavity_handles[v2]);
-          }
-        }
-      }
-
-      if(vertices_of_cavity_union_find.number_of_sets() > 2) {
-        if(this->debug().regions()) {
-          std::cerr << "...use non-intersecting edges to unify sets, until we have at most 2 sets\n";
-        }
-        for(auto c : cr_intersecting_cells) {
-
-          for(int i = 0; i < 4; ++i) {
-            for(int j = i + 1; j < 4; ++j) {
-              const auto v1 = c->vertex(i);
-              const auto v2 = c->vertex(j);
-              if(is_marked(v1, Vertex_marker::CAVITY) && is_marked(v2, Vertex_marker::CAVITY) &&
-                 non_intersecting_edges_set.count(make_sorted_pair(v1, v2)) > 0)
-              {
-                vertices_of_cavity_union_find.unify_sets(vertices_of_cavity_handles[v1],
-                                                         vertices_of_cavity_handles[v2]);
-              }
-            }
-          }
-          if(vertices_of_cavity_union_find.number_of_sets() <= 2)
-            break;
-        }
-      }
-
-      // find a vertex and a border-facet above the region
-      const auto [vertex_above, border_facet_above] = std::invoke([&] {
-        Edges_container all_border_edges{border_edges.begin(), border_edges.end()};
-        std::for_each(border_edges.begin(), border_edges.end(), [&](auto edge) {
-          all_border_edges.emplace_back(edge.first, edge.third, edge.second);
-        });
-        for(const auto& border_edge: all_border_edges) {
-          const auto [border_edge_va, border_edge_vb] = tr().vertices(border_edge);
-          auto circ = tr().incident_cells(border_edge);
-          CGAL_assertion(circ != nullptr);
-          const auto end = circ;
-          do {
-            const auto index_va = circ->index(border_edge_va);
-            const auto index_vb = circ->index(border_edge_vb);
-            const auto face_index = tr().next_around_edge(index_va, index_vb);
-            Facet facet{circ, face_index};
-            if(facets_of_border.count(facet) > 0) {
-              const auto other_vertex_index = 6 - index_va - index_vb - face_index;
-              const auto other_vertex = circ->vertex(other_vertex_index);
-              if(is_marked(other_vertex, Vertex_marker::CAVITY)) {
-                  return std::make_pair(circ->vertex(other_vertex_index), facet);
-              }
-            }
-          } while(++circ != end);
-        }
-        return std::make_pair(Vertex_handle{}, Facet{});
+    // find a vertex and a border-facet above the region
+    const auto [vertex_above, border_facet_above] = std::invoke([&] {
+      Edges_container all_border_edges{border_edges.begin(), border_edges.end()};
+      std::for_each(border_edges.begin(), border_edges.end(), [&](auto edge) {
+        all_border_edges.emplace_back(edge.first, edge.third, edge.second);
       });
-      CGAL_assume(vertex_above != Vertex_handle{});
+      for(const auto& border_edge: all_border_edges) {
+        const auto [border_edge_va, border_edge_vb] = tr().vertices(border_edge);
+        auto circ = tr().incident_cells(border_edge);
+        CGAL_assertion(circ != nullptr);
+        const auto end = circ;
+        do {
+          const auto index_va = circ->index(border_edge_va);
+          const auto index_vb = circ->index(border_edge_vb);
+          const auto face_index = tr().next_around_edge(index_va, index_vb);
+          Facet facet{circ, face_index};
+          if(facets_of_border.count(facet) > 0) {
+            const auto other_vertex_index = 6 - index_va - index_vb - face_index;
+            const auto other_vertex = circ->vertex(other_vertex_index);
+            if(is_marked(other_vertex, Vertex_marker::CAVITY)) {
+                return std::make_pair(circ->vertex(other_vertex_index), facet);
+            }
+          }
+        } while(++circ != end);
+      }
+      return std::make_pair(Vertex_handle{}, Facet{});
+    });
+    CGAL_assume(vertex_above != Vertex_handle{});
+    if(this->debug().regions()) {
+      std::cerr << "The vertex above the region is " << IO::oformat(vertex_above, with_point_and_info) << "\n";
+    }
+
+    CGAL::unordered_flat_set<Facet, boost::hash<Facet>> remaining_facets_of_border(facets_of_border.begin(),
+                                                                                    facets_of_border.end());
+
+    std::stack<std::pair<Facet, int>> stack;
+    stack.push({border_facet_above, 1});
+    auto erased = remaining_facets_of_border.erase(border_facet_above);
+    CGAL_assertion(erased > 0);
+    while(!stack.empty()) {
+      const auto [facet, above_below] = stack.top();
+      stack.pop();
+      auto [c, i] = facet;
       if(this->debug().regions()) {
-        std::cerr << "The vertex above the region is " << IO::oformat(vertex_above, with_point_and_info) << "\n";
-      }
-      // if there are still more than 2 sets, we need to propagate the information
-      // using a DFS on the border facets
-      if(vertices_of_cavity_union_find.number_of_sets() > 2) {
-        if(this->debug().regions()) {
-          std::cerr << "...propagate the information using a DFS on the border facets\n";
-        }
-        const auto border_edges_set = std::invoke([&] {
-          using Ordered_pair = std::pair<Vertex_handle, Vertex_handle>;
-          using Hash = boost::hash<Ordered_pair>;
-          CGAL::unordered_flat_set<Ordered_pair, Hash> border_edges_set;
-          for(auto edge : border_edges) {
-            auto [va, vb] = tr().vertices(edge);
-            border_edges_set.insert(make_sorted_pair(va, vb));
-          }
-          return border_edges_set;
-        });
-        CGAL::unordered_flat_set<Facet, boost::hash<Facet>> remaining_facets_of_border(facets_of_border.begin(),
-                                                                                       facets_of_border.end());
-
-        std::stack<Facet> stack;
-        std::optional<Union_find_handle> reference_handle_of_the_connected_component;
-        stack.push(border_facet_above);
-        remaining_facets_of_border.erase(border_facet_above);
-        while(!stack.empty()) {
-          const auto facet = stack.top();
-          stack.pop();
-          const auto [cell, facet_index] = facet; // border facet seen from the outside of the cavity
-          CGAL_assertion(cr_intersecting_cells.count(cell) == 0); //REMOVE
-          CGAL_assertion(cr_intersecting_cells.count(cell->neighbor(facet_index)) > 0); //REMOVE
-          const auto vertices = tr().vertices(facet);
-          for(auto v : vertices) {
-            if(is_marked(v, Vertex_marker::CAVITY)) {
-              if(!reference_handle_of_the_connected_component) {
-                reference_handle_of_the_connected_component = vertices_of_cavity_handles[v];
-              } else {
-                vertices_of_cavity_union_find.unify_sets(*reference_handle_of_the_connected_component,
-                                                         vertices_of_cavity_handles[v]);
-              }
-            }
-          }
-          for(int i = 0; i < 3; ++i) {
-            const auto va = vertices[i];
-            const auto vb = vertices[tr().ccw(i)];
-
-            if((is_marked(va, Vertex_marker::CAVITY) || is_marked(vb, Vertex_marker::CAVITY)) &&
-               border_edges_set.count(make_sorted_pair(va, vb)) == 0)
-            {
-              // loop around the edge [va, vb] to get another facet on the border of the cavity
-              auto previous_cell = cell;
-              auto other_cell = cell->neighbor(facet_index);
-              do {
-                CGAL_assertion(cr_intersecting_cells.count(other_cell) >= 0); // REMOVE
-                auto index_va = other_cell->index(va);
-                auto index_vb = other_cell->index(vb);
-                auto other_facet_index = tr().next_around_edge(index_vb, index_va);
-                previous_cell = other_cell;
-                other_cell = previous_cell->neighbor(other_facet_index);
-
-              } while(cr_intersecting_cells.count(other_cell) > 0);
-              const Facet neighbor_facet{other_cell, other_cell->index(previous_cell)};
-              CGAL_assertion(facets_of_border.count(neighbor_facet) > 0);
-              if(remaining_facets_of_border.erase(neighbor_facet) > 0) {
-                stack.push(neighbor_facet);
-              }
-            }
-          }
-
-          // if the stack is empty but there are still facets to process, we start again to recover
-          // another connected component of the cavity border
-          if(stack.empty() && !remaining_facets_of_border.empty()) {
-            stack.push(*remaining_facets_of_border.begin());
-            remaining_facets_of_border.erase(remaining_facets_of_border.begin());
-            reference_handle_of_the_connected_component.reset();
-          }
-        }
+        std::cerr << "  stack facet " << (above_below == 1 ? "above" : "below") << ":  "
+                  << IO::oformat(c->vertex(tr().vertex_triple_index(i, 0)), with_point_and_info) << "  "
+                  << IO::oformat(c->vertex(tr().vertex_triple_index(i, 1)), with_point_and_info) << "  "
+                  << IO::oformat(c->vertex(tr().vertex_triple_index(i, 2)), with_point_and_info) << "\n";
       }
 
-      CGAL_assertion_msg(vertices_of_cavity_union_find.number_of_sets() <= 2,
-                       std::invoke([&] {
-                         std::stringstream ss;
-                         ss << "Error: cavity has " << vertices_of_cavity_union_find.number_of_sets()
-                            << " sub-cavities (should be <=2)\n";
-                         return ss.str();
-                       }).c_str());
-      const auto vertex_above_handle = vertices_of_cavity_handles[vertex_above];
+      if(above_below == 1) {
+        facets_of_upper_cavity.push_back(facet);
+      } else {
+        facets_of_lower_cavity.push_back(facet);
+      }
+      const auto [cell, facet_index] = facet; // border facet seen from the outside of the cavity
+      CGAL_assertion(cr_intersecting_cells_set.count(cell) == 0); //REMOVE
+      CGAL_assertion(cr_intersecting_cells_set.count(cell->neighbor(facet_index)) > 0); //REMOVE
 
-      // find a vertex below the region (if any)
-      const auto vertex_below_handle = std::invoke([&] {
-        auto [b, e] = make_prevent_deref_range(vertices_of_cavity_union_find);
-        auto it = std::find_if_not(
-            b, e, [&](auto handle) { return vertices_of_cavity_union_find.same_set(handle, vertex_above_handle); });
-        if(it != e) {
-          return *it;
-        } else {
-          return vertices_of_cavity_union_find.end();
+      const auto vertices = tr().vertices(facet);
+
+      for(int i = 0; i < 3; ++i) {
+        const auto va = vertices[i];
+
+        if(is_marked(va, Vertex_marker::CAVITY)) {
+          if(above_below == 1) {
+            vertices_of_upper_cavity.push_back(va);
+            set_mark(va, Vertex_marker::CAVITY_ABOVE);
+            if(is_marked(va, Vertex_marker::CAVITY_BELOW)) {
+              throw Next_region("Both cavities meet at a vertex",fh_region[0]);
+            }
+          } else {
+            vertices_of_lower_cavity.push_back(va);
+            set_mark(va, Vertex_marker::CAVITY_BELOW);
+            if(is_marked(va, Vertex_marker::CAVITY_ABOVE)) {
+              throw Next_region("Both cavities meet at a vertex", fh_region[0]);
+            }
+          }
         }
-      });
-      CGAL_assertion(vertex_below_handle == vertices_of_cavity_union_find.end() ||
-                     !vertices_of_cavity_union_find.same_set(vertex_below_handle, vertex_above_handle));
-      CGAL_assertion((vertex_below_handle == vertices_of_cavity_union_find.end()) ==
-                     (vertices_of_cavity_union_find.number_of_sets() == 1));
+        const auto vb = vertices[tr().ccw(i)];
 
-      // use the union-find sets to mark vertices as above or below the region
-      for(auto handle : make_prevent_deref_range(vertices_of_cavity_union_find))
-      {
-        auto v = *handle;
-        clear_mark(v, Vertex_marker::CAVITY);
-        if(vertices_of_cavity_union_find.same_set(handle, vertex_above_handle)) {
-          vertices_of_upper_cavity.push_back(v);
-          set_mark(v, Vertex_marker::CAVITY_ABOVE);
-        } else if(vertex_below_handle != vertices_of_cavity_union_find.end() &&
-                  vertices_of_cavity_union_find.same_set(handle, vertex_below_handle))
+        const int next_facet_is_above_below =
+            ((is_marked(va, Vertex_marker::REGION_BORDER) && is_marked(vb, Vertex_marker::REGION_BORDER)) &&
+             border_edges_set.count(make_sorted_pair(va, vb)) > 0)
+                ? - above_below
+                : above_below;
         {
-          vertices_of_lower_cavity.push_back(v);
-          set_mark(v, Vertex_marker::CAVITY_BELOW);
-        } else {
-          CGAL_error();
+          // loop around the edge [va, vb] to get another facet on the border of the cavity
+          auto previous_cell = cell;
+          auto other_cell = cell->neighbor(facet_index);
+          do {
+            CGAL_assertion(cr_intersecting_cells_set.count(other_cell) >= 0); // REMOVE
+            auto index_va = other_cell->index(va);
+            auto index_vb = other_cell->index(vb);
+            auto other_facet_index = tr().next_around_edge(index_vb, index_va);
+            previous_cell = other_cell;
+            other_cell = previous_cell->neighbor(other_facet_index);
+
+          } while(cr_intersecting_cells_set.count(other_cell) > 0);
+          const Facet neighbor_facet{other_cell, other_cell->index(previous_cell)};
+          CGAL_assertion(facets_of_border.count(neighbor_facet) > 0);
+          if(remaining_facets_of_border.erase(neighbor_facet) > 0) {
+            if(this->debug().regions()) {
+              std::cerr << "  -> stack push new facet " << (next_facet_is_above_below == 1 ? "above" : "below") << ":  "
+                        << IO::oformat(neighbor_facet.first->vertex(tr().vertex_triple_index(neighbor_facet.second, 0)),
+                                       with_point_and_info)
+                        << "  "
+                        << IO::oformat(neighbor_facet.first->vertex(tr().vertex_triple_index(neighbor_facet.second, 1)),
+                                       with_point_and_info)
+                        << "  "
+                        << IO::oformat(neighbor_facet.first->vertex(tr().vertex_triple_index(neighbor_facet.second, 2)),
+                                       with_point_and_info)
+                        << "\n";
+            }
+            stack.push({neighbor_facet, next_facet_is_above_below});
+          }
         }
       }
+    } // end of while(!stack.empty()) of cavity border traversal
+    CGAL_assertion(remaining_facets_of_border.empty());
 
-      // if any vertex is still unmarked, it means that the union-find did not
-      // connect all the vertices of the cavity. Then propagate the information
-      // using the intersecting cells.
-      while(std::any_of(cr_intersecting_cells.begin(), cr_intersecting_cells.end(), [&](Cell_handle c) {
-           const auto vs = tr().vertices(c);
-           return std::any_of(vs.begin(), vs.end(), [&](auto v) {
-            if(!is_marked(v)) {
-              std::cerr << "INFO: Vertex " << IO::oformat(v, with_point_and_info) << " is not marked\n";
-              return true;
-            }
+    clear_marks(vertices_of_upper_cavity, Vertex_marker::CAVITY_ABOVE);
+    clear_marks(vertices_of_upper_cavity, Vertex_marker::CAVITY);
+
+    clear_marks(vertices_of_lower_cavity, Vertex_marker::CAVITY_BELOW);
+    clear_marks(vertices_of_lower_cavity, Vertex_marker::CAVITY);
+
+    auto _ = make_scope_exit([&]() {
+      CGAL_assertion(std::all_of(cr_intersecting_cells.begin(), cr_intersecting_cells.end(), [&](Cell_handle c) {
+        for(auto v: tr().vertices(c)) {
+          if(is_marked(v, Vertex_marker::CAVITY)) {
             return false;
-          });
-         }))
-      {
-        std::for_each(cr_intersecting_cells.begin(), cr_intersecting_cells.end(), [&](Cell_handle c) {
-          for(int i = 0; i < 4; ++i) {
-            for(int j = i + 1; j < 4; ++j) {
-              auto v1 = c->vertex(i);
-              auto v2 = c->vertex(j);
-              if(is_marked(v1) != is_marked(v2)) {
-                if(is_marked(v2)) {
-                  std::swap(v1, v2);
-                } // here v1 is marked and v2 is not
-                if(is_marked(v1, Vertex_marker::CAVITY_ABOVE)) {
-                  vertices_of_upper_cavity_.push_back(v2);
-                  set_mark(v2, Vertex_marker::CAVITY_ABOVE);
-                } else if(is_marked(v1, Vertex_marker::CAVITY_BELOW)) {
-                  vertices_of_lower_cavity_.push_back(v2);
-                  set_mark(v2, Vertex_marker::CAVITY_BELOW);
-                }
-              }
+          }
+        }
+        return true;
+      }));
+    });
+
+    const bool has_vertices_inside_the_cavity = std::invoke([&]() {
+      for(auto c : cr_intersecting_cells) {
+        for(auto v : tr().vertices(c)) {
+          if(is_marked(v, Vertex_marker::CAVITY)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+    if(has_vertices_inside_the_cavity) {
+      if(this->debug().regions()) {
+        std::cerr << "The cavity interior contain internal vertices:\n";
+      }
+      for(auto c : cr_intersecting_cells) {
+        for(auto v : tr().vertices(c)) {
+          if(is_marked(v, Vertex_marker::CAVITY)) {
+            clear_mark(v, Vertex_marker::CAVITY);
+            if(this->debug().regions()) {
+              std::cerr << "  " << IO::oformat(v, with_point_and_info) << "\n";
             }
           }
-        });
-      }
-
-      // classify the facets of the border of the cavity
-      for(auto facet: facets_of_border) {
-        if(this->debug().regions()) {
-          debug_output_facet_vertices({facet});
-        }
-        for(auto v: tr().vertices(facet)) {
-          if(is_marked(v, Vertex_marker::CAVITY_ABOVE)) {
-            facets_of_upper_cavity.push_back(facet);
-            break;
-          }
-          if(is_marked(v, Vertex_marker::CAVITY_BELOW)) {
-            facets_of_lower_cavity.push_back(facet);
-            break;
-          }
         }
       }
-      clear_marks(vertices_of_upper_cavity, Vertex_marker::CAVITY_ABOVE);
-      clear_marks(vertices_of_lower_cavity, Vertex_marker::CAVITY_BELOW);
-    } // new algorithm
+      throw Next_region("The cavities interior contain internal vertices", fh_region[0]);
+    }
 
     if(this->debug().regions()) {
       debug_dump_cavity_outputs(face_index, region_index, intersecting_edges, facets_of_border, facets_of_upper_cavity, facets_of_lower_cavity);
-      for(auto edge : intersecting_edges) {
-        auto [v1, v2] = tr().vertices(edge);
-        std::cerr << cdt_3_format("  edge: {}   {}\n", IO::oformat(v1, with_point_and_info),
-                                IO::oformat(v2, with_point_and_info));
-      }
     }
     return outputs;
   }
@@ -2948,8 +3025,11 @@ private:
                               CDT_2& non_const_cdt_2, Fh_region& non_const_fh_region)
   {
     if(this->debug().regions()) {
+      auto guard_color = CGAL::IO::make_color_guards(CGAL::IO::Ansi_color::Yellow, std::cerr);
       std::cerr << "restore_subface_region face index: " << face_index << ", region #" << region_index << "\n";
     }
+    auto guard_indenting = CGAL::IO::make_indenting_guards("| ", std::cerr, std::cout);
+
     const auto& cdt_2 = non_const_cdt_2;
     const auto& fh_region = non_const_fh_region;
     const auto border_edges = brute_force_border_3_of_region(face_index, region_index, cdt_2, fh_region);
@@ -2982,7 +3062,7 @@ private:
       }
     }
     set_marks(region_border_vertices, Vertex_marker::REGION_BORDER);
-    const auto found_edge_opt = search_first_intersection(face_index, cdt_2, fh_region, border_edges);
+    const auto found_edge_opt = search_first_intersection(face_index, cdt_2, fh_region, border_edges, region_vertices);
     clear_marks(region_border_vertices, Vertex_marker::REGION_BORDER);
 
     [[maybe_unused]] auto try_flip_region_size_4 = [&] {
@@ -3137,29 +3217,34 @@ private:
       clear_marks(region_vertices, Vertex_marker::REGION_INSIDE);
     }};
 
-    const auto [first_intersecting_edge, _] = *found_edge_opt;
-    const auto [intersecting_edges, original_intersecting_cells, original_vertices_of_upper_cavity,
-                original_vertices_of_lower_cavity, original_facets_of_upper_cavity, original_facets_of_lower_cavity] =
-        construct_cavities(face_index, region_index, cdt_2, fh_region, region_border_vertices, region_vertices,
-                           first_intersecting_edge, border_edges);
+    const auto [first_intersecting_edge, _, triangle_vertices] = *found_edge_opt;
+    const auto [intersecting_edges, intersected_triangles, original_intersecting_cells,
+                original_vertices_of_upper_cavity, original_vertices_of_lower_cavity, original_facets_of_upper_cavity,
+                original_facets_of_lower_cavity] =
+        construct_cavities(face_index, region_index, cdt_2, fh_region, region_vertices,
+                           first_intersecting_edge, triangle_vertices, border_edges);
 
-    const std::set<Point_3> polygon_points = std::invoke([&](){
-      std::set<Point_3> polygon_points;
-      for(auto vh : region_vertices) {
-        polygon_points.insert(this->point(vh));
+    const auto polygon_triangles = std::invoke([&]() {
+      std::set<std::array<Point_3, 3>> polygon_triangles;
+      for(auto fh : fh_region) {
+        std::array<Point_3, 3> triangle;
+        for(int i = 0; i < 3; ++i) {
+          triangle[i] = fh->vertex(i)->point();
+        }
+        std::sort(triangle.begin(), triangle.end());
+        polygon_triangles.insert(triangle);
       }
-      return polygon_points;
+      return polygon_triangles;
     });
 
     auto is_facet_of_polygon = [&](const auto& tr, Facet f) {
-      const auto [c, facet_index] = f;
+      std::array<Point_3, 3> triangle;
+      const auto [cell, index] = f;
       for(int i = 0; i < 3; ++i) {
-        const auto vh = c->vertex(T_3::vertex_triple_index(facet_index, i));
-        if(0 == polygon_points.count(tr.point(vh))) {
-          return false;
-        }
+        triangle[i] = cell->vertex(tr.vertex_triple_index(index, i))->point();
       }
-      return true;
+      std::sort(triangle.begin(), triangle.end());
+      return polygon_triangles.count(triangle) > 0;
     };
 
     if constexpr (cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
@@ -3172,29 +3257,66 @@ private:
                               original_vertices_of_lower_cavity.size(),
                               original_facets_of_upper_cavity.size(),
                               original_facets_of_lower_cavity.size());
+      std::cerr << "Lower cavity:\n";
+      std::cerr << "  Facets:\n";
+      for(const auto& f : original_facets_of_lower_cavity) {
+        std::cerr << "    ";
+        auto vertices = tr().vertices(f);
+        for(int i = 0; i < 3; ++i) {
+          std::cerr << IO::oformat(vertices[i], with_point_and_info) << "  ";
+        }
+        std::cerr << "\n";
+      }
+      std::cerr << "  Vertices:\n";
+      for(const auto& v : original_vertices_of_lower_cavity) {
+        std::cerr << "    " << IO::oformat(v, with_point_and_info) << "\n";
+      }
+      std::cerr << "Upper cavity:\n";
+      std::cerr << "  Facets:\n";
+      for(const auto& f : original_facets_of_upper_cavity) {
+        std::cerr << "    ";
+        auto vertices = tr().vertices(f);
+        for(int i = 0; i < 3; ++i) {
+          std::cerr << IO::oformat(vertices[i], with_point_and_info) << "  ";
+        }
+        std::cerr << "\n";
+      }
+      std::cerr << "  Vertices:\n";
+      for(const auto& v : original_vertices_of_upper_cavity) {
+        std::cerr << "    " << IO::oformat(v, with_point_and_info) << "\n";
+      }
     }
     auto register_internal_constrained_facet = [this](Facet f) { this->register_facet_to_be_constrained(f); };
 
-    if(this->debug().copy_triangulation_into_hole()) {
+    std::optional<decltype(CGAL::IO::make_indenting_guards("| ", std::cerr, std::cout, std::clog))> indent_guards;
+    if(this->debug().copy_triangulation_into_hole() || this->debug().regions()) {
       std::cerr << "# upper cavity\n";
+      indent_guards.emplace(IO::make_indenting_guards("  ", std::cerr, std::cout, std::clog));
     }
     [[maybe_unused]] const auto [upper_cavity_triangulation, vertices_of_upper_cavity,
                                  map_upper_cavity_vertices_to_ambient_vertices, facets_of_upper_cavity,
                                  interior_constrained_faces_upper, cells_of_upper_cavity] =
-        triangulate_cavity(original_intersecting_cells, original_facets_of_upper_cavity, original_vertices_of_upper_cavity);
+        triangulate_cavity(original_intersecting_cells, original_facets_of_upper_cavity,
+                           original_vertices_of_upper_cavity);
     const auto& upper_cavity_triangulation_ = upper_cavity_triangulation;
     std::for_each(interior_constrained_faces_upper.begin(), interior_constrained_faces_upper.end(),
                   register_internal_constrained_facet);
-    if(this->debug().copy_triangulation_into_hole()) {
+    if(this->debug().copy_triangulation_into_hole() || this->debug().regions()) {
+      indent_guards.reset();
       std::cerr << "# lower cavity\n";
+      indent_guards.emplace(IO::make_indenting_guards("  ", std::cerr, std::cout, std::clog));
     }
     [[maybe_unused]] const auto [lower_cavity_triangulation, vertices_of_lower_cavity,
                                  map_lower_cavity_vertices_to_ambient_vertices, facets_of_lower_cavity,
                                  interior_constrained_faces_lower, cells_of_lower_cavity] =
-        triangulate_cavity(original_intersecting_cells, original_facets_of_lower_cavity, original_vertices_of_lower_cavity);
+        triangulate_cavity(original_intersecting_cells, original_facets_of_lower_cavity,
+                           original_vertices_of_lower_cavity);
     const auto& lower_cavity_triangulation_ = lower_cavity_triangulation;
     std::for_each(interior_constrained_faces_lower.begin(), interior_constrained_faces_lower.end(),
                   register_internal_constrained_facet);
+    if(this->debug().copy_triangulation_into_hole() || this->debug().regions()) {
+      indent_guards.reset();
+    }
 
     // the following transform_reduce is like `std::any_of` but without the fast-exit
     if(std::transform_reduce(fh_region.begin(), fh_region.end(), false, std::logical_or<bool>{}, [&](auto fh) {
@@ -3283,8 +3405,8 @@ private:
     }
 
     typename T_3::Vertex_triple_Facet_map outer_map;
-    auto add_to_outer_map = [this, &outer_map](typename T_3::Vertex_triple vt, Facet f,
-                                               [[maybe_unused]] std::string_view extra = {}) {
+    auto add_to_outer_map = [&](typename T_3::Vertex_triple vt, Facet f,
+                                [[maybe_unused]] std::string_view extra = {}) {
       outer_map[vt] = f;
       CGAL_USE(this);
 #if CGAL_CDT_3_CAN_USE_CXX20_FORMAT
@@ -3296,7 +3418,9 @@ private:
                                 IO::oformat(vt[0], with_point),
                                 IO::oformat(vt[1], with_point),
                                 IO::oformat(vt[2], with_point));
-        std::ofstream out("dump_upper_outer_map.off");
+        std::stringstream filename;
+        filename << "dump_upper_outer_map_region_" << face_index << "_" << region_index << ".off";
+        std::ofstream out(filename.str());
         out.precision(17);
         write_facets(out, *this, std::ranges::views::values(outer_map));
         out.close();
@@ -3338,7 +3462,7 @@ private:
         pseudo_cells.emplace_back(new_cell, fh_2d);
         new_cell->set_vertices(vt[0], vt[1], vt[2], this->infinite_vertex());
         CGAL_assertion(static_cast<bool>(facet_is_facet_of_cdt_2(*this, {new_cell, 3}, cdt_2)));
-        add_to_outer_map(vt, {new_cell, 3}, "extra ");
+        add_to_outer_map(vt, {new_cell, 3}, "pseudo ");
       }
       if(this->debug().regions()) {
         std::ofstream out(cdt_3_format("dump_{}_pseudo_cells_region_{}_{}.off", is_upper_cavity ? "upper" : "lower",
@@ -3364,9 +3488,6 @@ private:
                                   IO::oformat(vt[2], with_point));
         }
       }
-      if(this->debug().copy_triangulation_into_hole()) {
-        std::cerr << "# glu the lower triangulation of the cavity\n";
-      }
       this->copy_triangulation_into_hole(map_upper_cavity_vertices_to_ambient_vertices,
                                          std::move(outer_map),
                                          upper_inner_map,
@@ -3385,7 +3506,7 @@ private:
       CGAL_assertion(static_cast<bool>(facet_is_facet_of_cdt_2(*this, f, cdt_2)));
       auto vt = this->make_vertex_triple(f);
       this->make_canonical_oriented_triple(vt);
-      add_to_outer_map(vt, f);
+      add_to_outer_map(vt, f, "pseudo ");
       this->tds().delete_cell(c);
     }
     fill_outer_map_of_cavity(lower_cavity_triangulation, facets_of_lower_cavity);
@@ -3401,18 +3522,23 @@ private:
                                   IO::oformat(vt[1], with_point),
                                   IO::oformat(vt[2], with_point));
         }
-        std::ofstream out("dump_lower_outer_map.off");
+        std::stringstream filename;
+        filename << "dump_lower_outer_map_region_" << face_index << "_" << region_index << ".off";
+        std::ofstream out(filename.str());
         out.precision(17);
         write_facets(out, *this, std::ranges::views::values(outer_map));
         out.close();
       }
 #endif // CGAL_CDT_3_CAN_USE_CXX20_FORMAT
-      this->copy_triangulation_into_hole(map_lower_cavity_vertices_to_ambient_vertices, std::move(outer_map), lower_inner_map,
-                                         this->new_cells_output_iterator());
+      this->copy_triangulation_into_hole(map_lower_cavity_vertices_to_ambient_vertices, std::move(outer_map),
+                                         lower_inner_map, this->new_cells_output_iterator());
     }
     std::set<Cell_handle> cells_to_remove{cells_of_lower_cavity.begin(), cells_of_lower_cavity.end()};
     cells_to_remove.insert(cells_of_upper_cavity.begin(), cells_of_upper_cavity.end());
     for(auto c : cells_to_remove) {
+      if(this->debug().copy_triangulation_into_hole()) {
+        std::cerr << "delete cell " << IO::oformat(c) << "\n";
+      }
       this->tds().delete_cell(c);
     }
 
@@ -3420,10 +3546,10 @@ private:
       const auto [outside_cell, outside_face_index] = outside_facet;
       const auto mirror_facet = this->mirror_facet(outside_facet);
       if(outside_cell->ccdt_3_data().is_facet_constrained(outside_face_index)) {
-        const auto poly_id = outside_cell->ccdt_3_data().face_constraint_index(outside_face_index);
-        const CDT_2& cdt_2 = face_cdt_2(poly_id);
+        const auto polygon_id = outside_cell->ccdt_3_data().face_constraint_index(outside_face_index);
+        const CDT_2& cdt_2 = face_cdt_2(polygon_id);
         const auto f2d = outside_cell->ccdt_3_data().face_2(cdt_2, outside_face_index);
-        set_facet_constrained(mirror_facet, poly_id, f2d);
+        set_facet_constrained(mirror_facet, polygon_id, f2d);
       }
     };
 
@@ -3451,6 +3577,9 @@ private:
       int i;
       typename CDT_2::Locate_type lt;
       const auto fh = cdt_2.locate(p, lt, i, hint);
+      if(lt != CDT_2::VERTEX) {
+         exception_ostream() << cdt_3_format("vertex_of_cdt_2_functor: point {}  lt = {}\n", IO::oformat(p), int(lt));
+      }
       CGAL_assume(lt == CDT_2::VERTEX);
       hint = fh;
       return fh->vertex(i);
@@ -3958,7 +4087,7 @@ public:
                 std::cerr << "ratio (non-squared):        "
                           << CGAL::sqrt(CGAL::to_double(from_exact(exact_sq_distance / exact_sq_circumradius))) << '\n';
               }
-              result = false;
+              result = true;
             }
           }
         }
@@ -3977,7 +4106,7 @@ public:
               if(verbose)
                 std::cerr << "non-empty circle " << std::endl;
 
-              result = false;
+              result = true;
             }
           }
         }
@@ -4176,43 +4305,6 @@ public:
     write_facets(out, tr, tr.finite_facets());
   }
 
-  void process_older_cavity_algorithm(const std::vector<Edge>& intersecting_edges,
-                                      const std::set<Cell_handle>& intersecting_cells,
-                                      std::vector<Vertex_handle>& vertices_of_upper_cavity,
-                                      std::vector<Vertex_handle>& vertices_of_lower_cavity,
-                                      std::vector<Facet>& facets_of_upper_cavity,
-                                      std::vector<Facet>& facets_of_lower_cavity)
-  {
-    auto new_vertex = make__new_element_functor<Vertex_handle>();
-
-    for(auto intersecting_edge: intersecting_edges) {
-      const auto [v_above, v_below] = tr().vertices(intersecting_edge);
-
-      if(new_vertex(v_above)) {
-        vertices_of_upper_cavity.push_back(v_above);
-      }
-      if(new_vertex(v_below)) {
-        vertices_of_lower_cavity.push_back(v_below);
-      }
-
-      auto cell_circ = this->incident_cells(intersecting_edge), end = cell_circ;
-      CGAL_assume(cell_circ != nullptr);
-      do {
-        const Cell_handle cell = cell_circ;
-        const auto index_v_above = cell->index(v_above);
-        const auto index_v_below = cell->index(v_below);
-        const auto cell_above = cell->neighbor(index_v_below);
-        const auto cell_below = cell->neighbor(index_v_above);
-        if(0 == intersecting_cells.count(cell_above)) {
-          facets_of_upper_cavity.emplace_back(cell_above, cell_above->index(cell));
-        }
-        if(0 == intersecting_cells.count(cell_below)) {
-          facets_of_lower_cavity.emplace_back(cell_below, cell_below->index(cell));
-        }
-      } while(++cell_circ != end);
-    }
-  }
-
   template <typename Element_type>
   static auto make__new_element_functor() {
     return [visited_set = std::set<Element_type>()](auto... e) mutable {
@@ -4221,16 +4313,19 @@ public:
     };
   };
 
-  template <typename Fh_region, typename Vertices_container>
+  template <typename Fh_region, typename Vertices_container, typename Edges_container>
   void detect_edges_and_cells_intersecting_region(
-      CDT_3_signed_index face_index,
-      int region_index,
+      [[maybe_unused]] CDT_3_signed_index face_index,
+      [[maybe_unused]] int region_index,
       const CDT_2& cdt_2,
       const Fh_region& fh_region,
-      const Vertices_container& region_border_vertices,
+      Vertices_container region_vertices,
+      Edges_container border_edges,
       Edge first_intersecting_edge,
+      [[maybe_unused]] const std::array<Vertex_handle, 3>& first_intersected_triangle_vertices,
       std::vector<Edge>& intersecting_edges,
-      std::set<Cell_handle>& intersecting_cells,
+      std::vector<std::array<Vertex_handle, 3>>& intersected_triangles,
+      std::vector<Cell_handle>& intersecting_cells,
       std::set<std::pair<Vertex_handle, Vertex_handle>>& non_intersecting_edges_set)
   {
     // Create visitor functors
@@ -4241,136 +4336,93 @@ public:
       return visited_edges.emplace(CGAL::make_sorted_pair(v0, v1), does_intersect);
     };
 
-    intersecting_edges.push_back(first_intersecting_edge);
-    const auto [v0, v1] = tr().vertices(first_intersecting_edge);
-    (void)new_edge(v0, v1, true);
+    auto test_edge = [&](Cell_handle cell, Vertex_handle v0, int index_v0, Vertex_handle v1, int index_v1)
+    {
+      auto value_returned = [this, v0, v1](bool b, bool not_visited, std::array<Vertex_handle, 3> triangle_vertices = {}) {
+        if constexpr (cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
+          std::cerr << cdt_3_format("test_edge {}   {}   return {} {}\n",
+                                    IO::oformat(v0, with_point_and_info),
+                                    IO::oformat(v1, with_point_and_info),
+                                    b,
+                                    not_visited ? "(new)" : "(cached)");
+          if(not_visited && b) {
+            std::cerr << "  triangle " << IO::oformat(triangle_vertices[0], with_point_and_info) << "\n"
+                      << "           " << IO::oformat(triangle_vertices[1], with_point_and_info) << "\n"
+                      << "           " << IO::oformat(triangle_vertices[2], with_point_and_info) << "\n";
+          }
+        }
+        CGAL_USE(this, v0, v1, b, not_visited);
+        return b;
+      };
+      auto [cached_value_it, not_visited] = new_edge(v0, v1, false);
+      if(!not_visited)
+        return value_returned(cached_value_it->second, not_visited);
 
-    for(std::size_t i = 0; i < intersecting_edges.size(); ++i) {
-      const auto intersecting_edge = intersecting_edges[i];
-      const auto [v_above, v_below] = tr().vertices(intersecting_edge);
-      if constexpr (cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
-        debug_dump_edge_region_intersection(face_index, region_index, fh_region, i, v_above, v_below, intersecting_edge);
+      auto [v0v1_intersects_region, triangle_vertices] =
+          does_edge_interior_intersect_region(cell, index_v0, index_v1, cdt_2, fh_region,
+                                              region_vertices, border_edges);
+      if(v0v1_intersects_region != 0) {
+        // report the edge with first vertex above the region
+        if(v0v1_intersects_region < 0) {
+          std::swap(index_v0, index_v1);
+          std::swap(v0, v1);
+        }
+        if constexpr(cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
+          debug_dump_edge_region_intersection(face_index, region_index, fh_region, region_vertices, border_edges, intersecting_edges.size(), v0, v1,
+                                              {cell, index_v0, index_v1}, triangle_vertices);
+        }
+
+        intersecting_edges.emplace_back(cell, index_v0, index_v1);
+        intersected_triangles.push_back(triangle_vertices);
+        cached_value_it->second = true;
+        return value_returned(true, not_visited, triangle_vertices);
       }
 
-      auto test_edge = [&](Cell_handle cell, Vertex_handle v0, int index_v0, Vertex_handle v1, int index_v1,
-                           int expected)
-      {
-        auto value_returned = [this, v0, v1](bool b, bool not_visited) {
-          if constexpr (cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
-              std::cerr << cdt_3_format("  test_edge {}   {}   return {} {}\n",
-                                        IO::oformat(v0, with_point_and_info),
-                                        IO::oformat(v1, with_point_and_info),
-                                        b,
-                                        not_visited ? "(new)" : "(cached)");
-          }
-          CGAL_USE(this, v0, v1, b, not_visited);
-          return b;
-        };
-        auto [cached_value_it, not_visited] = new_edge(v0, v1, false);
-        if(!not_visited) return value_returned(cached_value_it->second, not_visited);
-        int v0v1_intersects_region =
-            (is_marked(v0, Vertex_marker::REGION_INSIDE) || is_marked(v1, Vertex_marker::REGION_INSIDE))
-                ? expected
-                : does_edge_interior_intersect_region(cell, index_v0, index_v1, cdt_2, fh_region);
-        if(v0v1_intersects_region != 0) {
-          if(this->use_older_cavity_algorithm()) {
-            if(v0v1_intersects_region != expected) {
-              throw PLC_error{"PLC error: v0v1_intersects_region != expected" ,
-                    __FILE__, __LINE__, face_index, region_index};
-            }
-          }
-          // report the edge with first vertex above the region
-          if(v0v1_intersects_region < 0) {
-            std::swap(index_v0, index_v1);
-          }
-          intersecting_edges.emplace_back(cell, index_v0, index_v1);
-          cached_value_it->second = true;
-          return value_returned(true, not_visited);
-        } else {
-          non_intersecting_edges_set.insert(make_sorted_pair(v0, v1));
-          cached_value_it->second = false;
-          return value_returned(false, not_visited);
-        }
-      };
+      non_intersecting_edges_set.insert(make_sorted_pair(v0, v1));
+      cached_value_it->second = false;
+      return value_returned(false, not_visited);
+    };
 
-      auto facet_circ = this->incident_facets(intersecting_edge);
-      const auto facet_circ_end = facet_circ;
-      do { // loop facets around [v_above, v_below]
-        CGAL_assertion(false == this->is_infinite(*facet_circ));
-        const auto cell = facet_circ->first;
-        const auto facet_index = facet_circ->second;
-        if(cell->ccdt_3_data().is_facet_constrained(facet_index)) {
-          CGAL_error_msg(std::invoke([&]() {
-                           if(this->debug().regions()) this->dump_triangulation_to_off();
-                           return std::string("intersecting polygons!");
-                         }).c_str());
+    auto test_cell = [&](Cell_handle cell) {
+      std::optional<decltype(CGAL::IO::make_indenting_guards("| ", std::cerr, std::cout, std::clog))> indent_guards;
+      if constexpr(cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
+        std::cerr << cdt_3_format("test_cell #{}\n  {}\n  {}\n  {}\n  {}\n",
+            cell->time_stamp(),
+            IO::oformat(cell->vertex(0), with_point_and_info),
+            IO::oformat(cell->vertex(1), with_point_and_info),
+            IO::oformat(cell->vertex(2), with_point_and_info),
+            IO::oformat(cell->vertex(3), with_point_and_info));
+        indent_guards.emplace(CGAL::IO::make_indenting_guards("| ", std::cerr, std::cout, std::clog));
+      }
+      bool does_intersect = false;
+      for(int i = 0; i < 4; ++i) {
+        const auto v0 = cell->vertex(i);
+        for(int j = i + 1; j < 4; ++j) {
+          const auto v1 = cell->vertex(j);
+          if(test_edge(cell, v0, i, v1, j) != 0) {
+            does_intersect = true;
+          }
         }
-        if(new_cell(cell)) {
-          intersecting_cells.insert(cell);
-        }
-        const auto index_v_above = cell->index(v_above);
-        const auto index_v_below = cell->index(v_below);
-        const auto index_vc = 6 - index_v_above - index_v_below - facet_index;
-        const auto vc = cell->vertex(index_vc);
-        if(region_border_vertices.count(vc) > 0) continue; // intersecting edges cannot touch the border
+      }
+      if constexpr(cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
+        std::cerr << cdt_3_format("  -> test_cell return {}\n", does_intersect);
+      }
+      return does_intersect;
+    };
 
-        if(!test_edge(cell, v_above, index_v_above, vc, index_vc, 1) &&
-           !test_edge(cell, v_below, index_v_below, vc, index_vc, -1) &&
-           this->use_older_cavity_algorithm())
-        {
-          if(this->debug().regions()) {
-            dump_triangulation();
-            dump_region(face_index, region_index, cdt_2);
-            std::ofstream out(std::string("dump_two_edges_") + std::to_string(face_index) + ".polylines.txt");
-            out.precision(17);
-            write_segment(out, Edge{cell, index_v_above, index_vc});
-            write_segment(out, Edge{cell, index_v_below, index_vc});
-          }
-          throw PLC_error{"PLC error: !test_edge(v_above..) && !test_edge(v_below..)" ,
-                __FILE__, __LINE__, face_index, region_index};
+    (void)new_cell(first_intersecting_edge.first);
+    (void)test_cell(first_intersecting_edge.first);
+    intersecting_cells.push_back(first_intersecting_edge.first);
+
+    for(std::size_t i = 0; i < intersecting_cells.size(); ++i) {
+      const auto cell = intersecting_cells[i];
+      for(int other_i = 0; other_i < 4; ++other_i) {
+        auto neighbor = cell->neighbor(other_i);
+        if(new_cell(neighbor) && !tr().is_infinite(neighbor) && test_cell(neighbor)) {
+          intersecting_cells.push_back(neighbor);
         }
-      } while(++facet_circ != facet_circ_end);
-      if(this->use_newer_cavity_algorithm() && i + 1 == intersecting_edges.size()) {
-        for(auto ch: intersecting_cells) {
-          if(this->debug().regions()) {
-            std::cerr << "tetrahedron #" << ch->time_stamp() << " intersects the region\n";
-          }
-          for(int i = 0; i < 4; ++i) {
-            for(int j = i + 1; j < 4; ++j) {
-              test_edge(ch, ch->vertex(i), i, ch->vertex(j), j, 1);
-            }
-          }
-          for(int i = 0; i < 4; ++i) {
-            auto n_ch = ch->neighbor(i);
-            if(tr().is_infinite(n_ch))
-              continue;
-            if(new_cell(n_ch)) {
-              const auto tetrahedron = tr().tetrahedron(n_ch);
-              const auto tet_bbox = tetrahedron.bbox();
-              if(std::any_of(fh_region.begin(), fh_region.end(), [&](auto fh) {
-                   const auto triangle = cdt_2.triangle(fh);
-                   const auto tri_bbox = triangle.bbox();
-                   return CGAL::do_overlap(tet_bbox, tri_bbox) &&
-                       does_tetrahedron_intersect_triangle_interior(tetrahedron, triangle, tr().geom_traits());
-                 }))
-              {
-                intersecting_cells.insert(n_ch);
-                if(this->debug().regions()) {
-                  std::cerr << "new tetrahedron #" << n_ch->time_stamp() << " intersects the region\n";
-                }
-              } else if(this->debug().regions()) {
-                std::cerr << "NO, new tetrahedron #" << n_ch->time_stamp() << " does not intersect the region\n";
-              }
-              for(int i = 0; i < 4; ++i) {
-                for(int j = i + 1; j < 4; ++j) {
-                  test_edge(n_ch, n_ch->vertex(i), i, n_ch->vertex(j), j, 1);
-                }
-              }
-            }
-          }
-        }
-      } // last intersecting edge, and new algorithm
-    } // end loop on intersecting_edges
+      }
+    }
   }
 
   void debug_dump_cavity_outputs(CDT_3_signed_index face_index,
@@ -4387,7 +4439,7 @@ public:
     out.precision(17);
     write_facets(out, tr(), facets_of_border);
     out.close();
-
+    std::cerr << "intersecting edges:\n";
     // Dump intersecting edges information
     for(auto edge : intersecting_edges) {
       auto [v1, v2] = tr().vertices(edge);
@@ -4423,24 +4475,35 @@ public:
       std::cerr << "\n";
     }
   }
-
-  template <typename Fh_region>
+  template <typename Fh_region, typename Vertices_container, typename Edges_container>
   void debug_dump_edge_region_intersection(CDT_3_signed_index face_index,
                                            int region_index,
                                            const Fh_region& fh_region,
+                                           [[maybe_unused]] const Vertices_container& region_vertices,
+                                           [[maybe_unused]] const Edges_container& border_edges,
                                            std::size_t edge_index,
                                            Vertex_handle v_above,
                                            Vertex_handle v_below,
-                                           Edge intersecting_edge)
+                                           Edge intersecting_edge,
+                                           const std::array<Vertex_handle, 3>& first_intersected_triangle_vertices)
   {
     using EK = CGAL::Exact_predicates_exact_constructions_kernel;
     const auto to_exact = CGAL::Cartesian_converter<Geom_traits, EK>();
     const auto& cdt_2 = this->face_cdt_2(face_index);
 
-    std::cerr << cdt_3_format("restore_subface_region face index: {}, region #{}, intersecting edge #{}: ({}   {})\n",
-                              face_index, region_index, edge_index,
-                              IO::oformat(v_above, with_point_and_info),
-                              IO::oformat(v_below, with_point_and_info));
+    auto of = [](auto&&... args) {
+      return IO::oformat(std::forward<decltype(args)>(args)..., with_point_and_info);
+    };
+
+    auto indent_guard = CGAL::IO::make_indenting_guards("| ", std::cerr, std::cout, std::clog);
+    std::cerr << cdt_3_format("intersecting edge #{}: ( {}   {} )\n"
+                              "intersected triangle vertices: {}\n"
+                              "                               {}\n"
+                              "                               {}\n",
+                              edge_index, of(v_above), of(v_below),
+                              of(first_intersected_triangle_vertices[0]),
+                              of(first_intersected_triangle_vertices[1]),
+                              of(first_intersected_triangle_vertices[2]));
     dump_region(face_index, region_index, cdt_2);
 
     const auto p_above = this->point(v_above);
@@ -4448,7 +4511,10 @@ public:
     const auto edge_segment = typename Geom_traits::Segment_3{p_above, p_below};
     const auto exact_edge_segment = to_exact(edge_segment);
 
-    std::ofstream intersect_out("dump_edge_region_intersection.xyz");
+    std::stringstream ss_filename;
+    ss_filename << "dump_edge_region_intersection_" << face_index << "_" << region_index << ".xyz";
+
+    std::ofstream intersect_out(ss_filename.str());
     intersect_out.precision(17);
     for(auto fh: fh_region) {
         auto v0 = fh->vertex(0)->info().vertex_handle_3d;
@@ -4468,37 +4534,44 @@ public:
 
     auto cells_around_intersecting_edge = Container_from_circulator{this->incident_cells(intersecting_edge)};
     for(const auto& ch: make_prevent_deref_range(cells_around_intersecting_edge)) {
-      CGAL_assertion(!ch->has_vertex(tr().infinite_vertex()));
-      auto tetrahedron = tr().tetrahedron(ch.current_circulator());
-      std::cerr << cdt_3_format("Test tetrahedron (#{}):\n  {}\n  {}\n  {}\n  {}\n",
-                              ch->time_stamp(),
-                              IO::oformat(ch->vertex(0), with_point_and_info),
-                              IO::oformat(ch->vertex(1), with_point_and_info),
-                              IO::oformat(ch->vertex(2), with_point_and_info),
-                              IO::oformat(ch->vertex(3), with_point_and_info));
-      if(!std::any_of(fh_region.begin(), fh_region.end(), [&](const auto fh) {
-          auto triangle = cdt_2.triangle(fh);
-          bool b = does_tetrahedron_intersect_triangle_interior(tetrahedron, triangle, tr().geom_traits());
-          if(b) {
-            std::cerr << "  intersects the region\n";
+      if(tr().is_infinite(ch.current_circulator())) {
+        continue;
+      }
+      std::cerr << cdt_3_format("Test tetrahedron (#{}):\n  {}\n  {}\n  {}\n  {}\n", ch->time_stamp(),
+                                of(ch->vertex(0)), of(ch->vertex(1)), of(ch->vertex(2)), of(ch->vertex(3)));
+      bool does_intersect_region = std::invoke([&]() {
+        for(int i = 0; i < 4; ++i) {
+          for(int j = i + 1; j < 4; ++j) {
+            const bool b = does_edge_interior_intersect_region(ch.current_circulator(), i, j, cdt_2, fh_region,
+                                                               region_vertices, border_edges)
+                               .first != 0;
+            if(b) {
+              std::cerr << "  intersects the region\n";
+              return true;
+            }
           }
-          return b;
-        }))
+        }
+        return false;
+      });
+      if(!does_intersect_region)
       {
-        std::cerr << cdt_3_format(
-            "ERROR: The following tetrahedron (#{}) does not intersect the region:\n  {}\n  {}\n  {}\n  {}\n",
-            ch->time_stamp(),
-            IO::oformat(ch->vertex(0), with_point_and_info), IO::oformat(ch->vertex(1), with_point_and_info),
-            IO::oformat(ch->vertex(2), with_point_and_info), IO::oformat(ch->vertex(3), with_point_and_info));
+        exception_ostream()
+            << cdt_3_format(
+                   "ERROR: The following tetrahedron (#{}) does not intersect the region:\n  {}\n  {}\n  {}\n  {}",
+                   ch->time_stamp(), of(ch->vertex(0)), of(ch->vertex(1)), of(ch->vertex(2)), of(ch->vertex(3)))
+            << std::endl;
       }
     }
   }
 
-  template <typename Fh_region>
+  template <typename Fh_region, typename Vertices_container, typename Edges_container>
   void expensive_debug_dump_tetrahedra_intersect_region(CDT_3_signed_index face_index,
                                                         int region_index,
                                                         const CDT_2& cdt_2,
-                                                        const Fh_region& fh_region)
+                                                        const Fh_region& fh_region,
+                                                        const Vertices_container& region_vertices,
+                                                        const Edges_container& border_edges,
+                                                        const std::set<Cell_handle>& intersecting_cells_to_check)
   {
     using Mesh = Surface_mesh<Point_3>;
     using Face_index = typename Mesh::Face_index;
@@ -4509,36 +4582,50 @@ public:
     Mesh tets_intersect_region_mesh;
     auto [color_vpmap, _] = tets_intersect_region_mesh.template add_property_map<Face_index, int>("f:patch_id");
 
-    for(auto ch : tr().finite_cell_handles()) {
-      auto tetrahedron = tr().tetrahedron(ch);
-      if(!std::any_of(fh_region.begin(), fh_region.end(), [&](auto fh) {
-          const auto triangle = cdt_2.triangle(fh);
-          return does_tetrahedron_intersect_triangle_interior(tetrahedron, triangle, tr().geom_traits());
-        }))
-      {
-        continue;
-      }
-      bool intersects = false;
-      for(int i = 0; i < 4; ++i) {
-        for(int j = i + 1; j < 4; ++j) {
-          int intersects_region = does_edge_interior_intersect_region(ch, i, j, cdt_2, fh_region);
-          if(intersects_region != 0) {
-            intersects = true;
+    for(auto ch : tr().finite_cell_handles())
+    {
+      const bool is_in_set = intersecting_cells_to_check.find(ch) != intersecting_cells_to_check.end();
+
+      const bool intersects = [&]() {
+        for(int index_v0 = 0; index_v0 < 4; ++index_v0) {
+          for(int index_v1 = index_v0 + 1; index_v1 < 4; ++index_v1) {
+            int intersects_region = does_edge_interior_intersect_region(ch, index_v0, index_v1, cdt_2, fh_region,
+                                                                         region_vertices, border_edges).first;
+            if(intersects_region != 0) {
+              return true;
+            }
           }
         }
-      }
-      if(!intersects) {
-        std::cerr << "ERROR: tetrahedron #" << ch->time_stamp() << " has no edge intersecting the region\n";
-      }
-      std::ofstream dump_tetrahedron(
-          cdt_3_format("dump_intersecting_{}_{}_tetrahedron_{}.off", face_index, region_index, ch->time_stamp()));
-      dump_tetrahedron.precision(17);
-      Mesh mesh;
-      CGAL::make_tetrahedron(tr().point(ch->vertex(0)), tr().point(ch->vertex(1)), tr().point(ch->vertex(2)),
-                             tr().point(ch->vertex(3)), mesh);
-      dump_tetrahedron << mesh;
-      dump_tetrahedron.close();
+        return false;
+      }();
 
+      if(is_in_set != intersects) {
+        exception_ostream() << cdt_3_format(
+            "ERROR: tetrahedron #{} is {} in the intersecting_cells_to_check set but it {}intersects the region\n",
+            ch->time_stamp(),
+            is_in_set ? "" : "not",
+            intersects ? "" : "does not ")<< std::endl;
+      }
+
+      auto dump_tetrahedron = [&](const std::string& prefix) {
+        std::ofstream dump_tetrahedron(
+            cdt_3_format("{}_{}_{}_tetrahedron_{}.off", prefix, face_index, region_index, ch->time_stamp()));
+        dump_tetrahedron.precision(17);
+        Mesh mesh;
+        CGAL::make_tetrahedron(tr().point(ch->vertex(0)), tr().point(ch->vertex(1)), tr().point(ch->vertex(2)),
+                              tr().point(ch->vertex(3)), mesh);
+        dump_tetrahedron << mesh;
+        dump_tetrahedron.close();
+      };
+
+      if(!intersects) {
+        // dump_tetrahedron("dump_non_intersecting");
+
+        continue;
+      }
+      dump_tetrahedron("dump_intersecting");
+
+      auto tetrahedron = tr().tetrahedron(ch);
       auto exact_tetrahedron = to_exact(tetrahedron);
       for(auto fh : fh_region) {
         auto v0 = fh->vertex(0)->info().vertex_handle_3d;

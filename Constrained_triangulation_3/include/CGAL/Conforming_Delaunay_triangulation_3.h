@@ -54,6 +54,7 @@
 #include <ostream>
 #include <sstream>
 #include <stack>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -72,13 +73,13 @@ namespace CDT_3 {
 struct Debug_options {
   enum class Flags {
     Steiner_points = 0,
+    Steiner_points_construction,
     conforming,
     input_faces,
     missing_region,
     regions,
     copy_triangulation_into_hole,
     validity,
-    use_older_cavity_algorithm,
     debug_finite_edges_map,
     use_finite_edges_map,
     debug_subconstraints_to_conform,
@@ -93,6 +94,8 @@ struct Debug_options {
     use_epeck_for_Steiner_points,
     nb_of_flags
   };
+  bool Steiner_points_construction() const { return flags[static_cast<int>(Flags::Steiner_points_construction)]; }
+  void Steiner_points_construction(bool b) { flags.set(static_cast<int>(Flags::Steiner_points_construction), b); }
 
   bool Steiner_points() const { return flags[static_cast<int>(Flags::Steiner_points)]; }
   void Steiner_points(bool b) { flags.set(static_cast<int>(Flags::Steiner_points), b); }
@@ -112,9 +115,6 @@ struct Debug_options {
   bool validity() const { return flags[static_cast<int>(Flags::validity)]; }
   void validity(bool b) { flags.set(static_cast<int>(Flags::validity), b); }
 
-  bool use_older_cavity_algorithm() const { return flags[static_cast<int>(Flags::use_older_cavity_algorithm)]; }
-  bool use_newer_cavity_algorithm() const { return !flags[static_cast<int>(Flags::use_older_cavity_algorithm)]; }
-  void use_older_cavity_algorithm(bool b) { flags.set(static_cast<int>(Flags::use_older_cavity_algorithm), b); }
 
   bool finite_edges_map() const { return flags[static_cast<int>(Flags::debug_finite_edges_map)]; }
   void finite_edges_map(bool b) { flags.set(static_cast<int>(Flags::debug_finite_edges_map), b); }
@@ -552,9 +552,6 @@ public:
   const CDT_3::Debug_options& debug() const { return debug_options_; }
 
   // Backward compatibility wrappers (deprecated, use debug().method() instead)
-  bool use_older_cavity_algorithm() const { return debug_options_.use_older_cavity_algorithm(); }
-  bool use_newer_cavity_algorithm() const { return debug_options_.use_newer_cavity_algorithm(); }
-  void use_older_cavity_algorithm(bool b) { debug_options_.use_older_cavity_algorithm(b); }
   bool use_finite_edges_map() const { return update_all_finite_edges_ && debug_options_.use_finite_edges_map_flag(); }
   void use_finite_edges_map(bool b) { debug_options_.use_finite_edges_map(b); }
 
@@ -791,11 +788,29 @@ protected:
     Locate_type lt;
     int li, lj;
     const Cell_handle c = tr().locate(steiner_pt, lt, li, lj, hint);
+    if(lt == T_3::VERTEX) {
+      auto other_v = c->vertex(li);
+      const auto [c_va, c_vb] = constraint_extremities(constraint);
+      std::stringstream ss;
+      ss.precision(std::cerr.precision());
+      ss << "insert_Steiner_point_on_subconstraint: Steiner point coincides with an existing vertex\n";
+      ss << "  -> Steiner point: " << steiner_pt << '\n';
+      ss << "     on constraint: " << display_vert(c_va) << "  -  " << display_vert(c_vb) << '\n';
+      ss << "  -> existing vertex: " << IO::oformat(other_v, with_point_and_info) << '\n';
+      if(other_v->ccdt_3_data().number_of_incident_constraints() > 0) {
+        const auto c_id = other_v->ccdt_3_data().constrained_polyline_id(*this);
+        const auto [c_va, c_vb] = constraint_extremities(c_id);
+        ss << "     which is on constraint: " << display_vert(c_va) << " - " << display_vert(c_vb) << '\n';
+        ss << "  Possible cause: two input segments are too close to each other\n";
+      } else if(other_v->ccdt_3_data().vertex_type() == CDT_3_vertex_type::INPUT_VERTEX) {
+        ss << "     which is an input vertex.\n";
+        ss << "  Possible cause: an input segment is too close to an input vertex\n";
+      }
+      throw std::runtime_error(std::move(ss).str());
+    }
     const Vertex_handle v = visitor.insert_in_triangulation(steiner_pt, lt, c, li, lj);
     v->ccdt_3_data().set_vertex_type(CDT_3_vertex_type::STEINER_ON_EDGE);
-    if(lt != T_3::VERTEX) {
-      v->ccdt_3_data().set_on_constraint(constraint);
-    }
+    v->ccdt_3_data().set_on_constraint(constraint);
     constraint_hierarchy.add_Steiner(va, vb, v);
     visitor.insert_Steiner_point_on_constraint(constraint, va, vb, v);
     add_to_subconstraints_to_conform(va, v, constraint);
@@ -1126,7 +1141,7 @@ protected:
       return {exact(midpoint_functor(pa, pb)), va->cell(), va};
     }
 
-    if(debug().encroaching_vertices()) {
+    if(debug().Steiner_points_construction()) {
       std::cerr << "construct_Steiner_point( " << display_vert(va) << " , "
                 << display_vert(vb) << " )\n";
     }
@@ -1142,10 +1157,10 @@ protected:
                                        pa, this->tr().point(v2), pb) == SMALLER;
         });
     CGAL_assertion(reference_vertex_it != vector_of_encroaching_vertices.end());
-#if CGAL_CDT_3_DEBUG_CONFORMING
-    std::cerr << "  -> reference point: " << display_vert(*reference_vertex_it)
-              << '\n';
-#endif // CGAL_CDT_3_DEBUG_CONFORMING
+    if(debug().Steiner_points_construction()) {
+      std::cerr << "  -> reference point: " << display_vert(*reference_vertex_it)
+          << '\n';
+    }
     const auto reference_vertex = *reference_vertex_it;
     const auto& reference_point = tr().point(reference_vertex);
 
@@ -1155,36 +1170,41 @@ protected:
       CGAL_assertion(reference_vertex->ccdt_3_data().number_of_incident_constraints() == 1);
       const auto ref_constrained_polyline_id = reference_vertex->ccdt_3_data().constrained_polyline_id(*this);
       const auto [ref_va, ref_vb] = constraint_extremities(ref_constrained_polyline_id);
-#if CGAL_CDT_3_DEBUG_CONFORMING
-      std::cerr << "  reference point is on constraint: " << display_vert(ref_va)
+      if(debug().Steiner_points_construction()) {
+        std::cerr << "  reference point is on constraint: " << display_vert(ref_va)
                 << "    " << display_vert(ref_vb) << '\n'
                 << "  original constraint:              " << display_vert(orig_va)
                 << "    " << display_vert(orig_vb) << '\n';
-#endif // CGAL_CDT_3_DEBUG_CONFORMING
+      }
       const auto vector_orig_ab = vector_functor(orig_pa, orig_pb);
       const auto length_ab = CGAL::approximate_sqrt(sq_length_functor(vector_ab));
       auto return_orig_result_point = [&](auto lambda_val, Point orig_pa_param,
                                           Point orig_pb_param) -> Construct_Steiner_point_return_type {
         // Compute projected point with distance-based ratio threshold check
         const auto result_point = compute_projected_point_with_threshold(
-            orig_pa_param, orig_pb_param,  // Projection segment
-            pa, pb,                         // Midpoint segment
+            orig_pa_param, orig_pb_param,                         // Projection segment
+            pa, pb,                                               // Midpoint segment
             [lambda_val](auto&&, auto&&) { return lambda_val; },  // Lambda computer
-            [&](auto, const std::optional<Point>& projected_pt) {  // Threshold check based on distance ratio
+            [&](auto, const std::optional<Point>& projected_pt) { // Threshold check based on distance ratio
               // If projected_pt is not computed yet (std::nullopt), can't check, so return false
-              if(!projected_pt) return false;
+              if(!projected_pt)
+                return false;
 
               const auto dist_a_result = CGAL::approximate_sqrt(sq_length_functor(vector_functor(pa, *projected_pt)));
               const auto ratio = dist_a_result / length_ab;
-#if CGAL_CDT_3_DEBUG_CONFORMING
-              std::cerr << "  ref ratio = " << ratio << '\n';
-#endif
-              return ratio < 0.2 || ratio > 0.8;
+              bool use_midpoint = ratio < 0.2 || ratio > 0.8;
+              if(debug().Steiner_points_construction()) {
+                std::cerr << "  ref ratio = " << ratio << '\n';
+                if(use_midpoint) {
+                  std::cerr << "  -> using midpoint instead of projection\n";
+                }
+              }
+              return use_midpoint;
             });
 
-#if CGAL_CDT_3_DEBUG_CONFORMING
-        std::cerr << "  -> Steiner point: " << result_point << '\n';
-#endif // CGAL_CDT_3_DEBUG_CONFORMING
+        if(debug().Steiner_points_construction()) {
+          std::cerr << "  -> Steiner point: " << result_point << '\n';
+        }
         return {exact(result_point), reference_vertex->cell(), reference_vertex};
       };
 
@@ -1231,12 +1251,12 @@ protected:
           return result;
         });
 
-#if CGAL_CDT_3_DEBUG_CONFORMING
-    const auto vector_a_ref = vector_functor(pa, reference_point);
-    const auto lambda = sc_product_functor(vector_a_ref, vector_ab) / sq_length_functor(vector_ab);
-    std::cerr << "  lambda = " << lambda << '\n';
-    std::cerr << "  -> Steiner point: " << result_point << '\n';
-#endif // CGAL_CDT_3_DEBUG_CONFORMING
+    if(debug().Steiner_points_construction()) {
+      const auto vector_a_ref = vector_functor(pa, reference_point);
+      const auto lambda = gt.compute_scalar_product_3_object()(vector_a_ref, vector_ab) / sq_length_functor(vector_ab);
+      std::cerr << "  lambda = " << lambda << '\n';
+      std::cerr << "  -> Steiner point: " << result_point << '\n';
+    }
     return {exact(result_point), reference_vertex->cell(), reference_vertex};
   }
 
