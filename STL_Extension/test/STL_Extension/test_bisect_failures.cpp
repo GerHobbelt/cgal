@@ -1,18 +1,22 @@
 #if defined(NDEBUG)
-#  #undef NDEBUG
+#  undef NDEBUG
 #endif
 #if defined(CGAL_NDEBUG)
 #  undef CGAL_NDEBUG
 #endif
 #include <CGAL/assertions.h>
 #include <CGAL/bisect_failures.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <map>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 // Test: bisecting a vector to find which elements cause a "failure"
@@ -90,20 +94,28 @@ int test(int test_id,
   };
 
   // Save function: captures saved data for validation
-  auto save = [&](const Test_data& data, std::string name) {
-    const std::map<std::string, Test_data*> name_to_data = {
-      { "bad", &final_bad_data },
-      { "final_bad", &final_bad_data },  // Both map to final_bad_data
-      { "error", &other_error_data },
-      { "current", &current_data }
+  auto save = [&](const Test_data& data, CGAL::Bisection_event event) {
+    static const std::map<CGAL::Bisection_event, std::string> event_name = {
+        { CGAL::BAD_DATA, "BAD_DATA" },
+        { CGAL::FINAL_BAD_DATA, "FINAL_BAD_DATA" },
+        { CGAL::ERROR_DATA, "ERROR_DATA" },
+        { CGAL::CURRENT_DATA, "CURRENT_DATA" }
     };
+    const std::map<CGAL::Bisection_event, Test_data*> event_to_data = {
+      { CGAL::BAD_DATA, &final_bad_data },
+      { CGAL::FINAL_BAD_DATA, &final_bad_data },  // Both map to final_bad_data
+      { CGAL::ERROR_DATA, &other_error_data },
+      { CGAL::CURRENT_DATA, &current_data }
+    };
+
+    const auto& name = event_name.at(event);
 
     // Don't save files during test
     std::cout << "(fake) Saving data of size " << data.size() << " to file " << name << "\n  "
               << display_elements(data) << "\n";
 
-    auto it = name_to_data.find(name);
-    Test_data* target = (it != name_to_data.end()) ? it->second : &other__should_not_be_used;
+    auto it = event_to_data.find(event);
+    Test_data* target = (it != event_to_data.end()) ? it->second : &other__should_not_be_used;
     *target = data;
 
   };
@@ -128,7 +140,7 @@ int test(int test_id,
   if(expect_failure != (caught_exception || result_code != EXIT_SUCCESS)) {
     std::cerr << "Test failed! Expected failure: " << expect_failure << ", but got "
               << (caught_exception ? "" : "no ") << "exception and result code is " << result_code << ".\n";
-    abort();
+    std::abort();
   }
 
   if(expected_bad_elements != final_bad_data ||
@@ -147,7 +159,7 @@ int test(int test_id,
     std::cerr << display_elements(other_error_data);
     std::cerr << "\n  Other elements (should not be used): ";
     std::cerr << display_elements(other__should_not_be_used);
-    abort();
+    std::abort();
   }
 
   return EXIT_SUCCESS;

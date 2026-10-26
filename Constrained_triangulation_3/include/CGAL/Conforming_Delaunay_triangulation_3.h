@@ -52,6 +52,7 @@
 #include <limits>
 #include <optional>
 #include <ostream>
+#include <set>
 #include <sstream>
 #include <stack>
 #include <stdexcept>
@@ -89,6 +90,7 @@ struct Debug_options {
     debug_constraint_hierarchy,
     debug_geometric_errors,
     debug_polygon_insertion,
+    debug_restore_faces,
     display_statistics,
     use_epeck_for_normals,
     use_epeck_for_Steiner_points,
@@ -142,6 +144,9 @@ struct Debug_options {
 
   bool polygon_insertion() const { return flags[static_cast<int>(Flags::debug_polygon_insertion)]; }
   void polygon_insertion(bool b) { flags.set(static_cast<int>(Flags::debug_polygon_insertion), b); }
+
+  bool restore_faces() const { return flags[static_cast<int>(Flags::debug_restore_faces)]; }
+  void restore_faces(bool b) { flags.set(static_cast<int>(Flags::debug_restore_faces), b); }
 
   bool display_statistics() const { return flags[static_cast<int>(Flags::display_statistics)]; }
   void display_statistics(bool b) { flags.set(static_cast<int>(Flags::display_statistics), b); }
@@ -335,28 +340,37 @@ protected:
 
     template <class InputIterator>
     void process_cells_in_conflict(InputIterator cell_it, InputIterator end) {
+      const CGAL::unordered_flat_set<Cell_handle> cells_set(cell_it, end);
+      std::set<std::pair<Vertex_handle, Vertex_handle>> edges_in_conflict;
       auto d = self->tr().dimension();
-      for( ; cell_it != end; ++cell_it )
-        for( int i = 0; i < d; ++i )
-          for( int j = i+1; j <= d; ++j ) {
-            auto v1 = (*cell_it)->vertex(i);
-            auto v2 = (*cell_it)->vertex(j);
+      for( ; cell_it != end; ++cell_it ) {
+        for( int i = 0; i < d; ++i ) {
+          const auto n = (*cell_it)->neighbor(i);
+          if(cells_set.find(n) == cells_set.end()) continue;
+          // here: (c, i) is a facet internal to the conflict region
+          for(int j = 0; j < 3; ++j ) {
+            auto v1 = (*cell_it)->vertex(self->tr().vertex_triple_index(i, j));
+            auto v2 = (*cell_it)->vertex(self->tr().vertex_triple_index(i, self->tr().cw(j)));
             if(self->tr().is_infinite(v1) || self->tr().is_infinite(v2)) continue;
-            if(self->use_finite_edges_map()) {
-              if(v1 > v2) std::swap(v1, v2);
-              auto v1_index = v1->time_stamp();
-              [[maybe_unused]] auto nb_erased = self->all_finite_edges[v1_index].erase(v2);
-              if constexpr (cdt_3_can_use_cxx20_format()) if(self->debug().finite_edges_map() && nb_erased > 0) {
-                std::cerr << cdt_3_format("erasing edge {} {}\n", self->display_vert((std::min)(v1, v2)),
-                                        self->display_vert((std::max)(v1, v2)));
-              }
-            }
-            auto [contexts_begin, contexts_end] =
-              self->constraint_hierarchy.contexts(v1, v2);
-            if(contexts_begin != contexts_end) {
-              self->add_to_subconstraints_to_conform(v1, v2, contexts_begin->id());
-            }
+            edges_in_conflict.insert(CGAL::make_sorted_pair(v1, v2));
           }
+        }
+      }
+      for(auto [v1, v2]: edges_in_conflict) {
+        if(self->use_finite_edges_map()) {
+          auto v1_index = v1->time_stamp();
+          [[maybe_unused]] auto nb_erased = self->all_finite_edges[v1_index].erase(v2);
+          if constexpr (cdt_3_can_use_cxx20_format()) if(self->debug().finite_edges_map() && nb_erased > 0) {
+            std::cerr << cdt_3_format("erasing edge {} {}\n", self->display_vert((std::min)(v1, v2)),
+                                    self->display_vert((std::max)(v1, v2)));
+          }
+        }
+        auto [contexts_begin, contexts_end] =
+          self->constraint_hierarchy.contexts(v1, v2);
+        if(contexts_begin != contexts_end) {
+          self->add_to_subconstraints_to_conform(v1, v2, contexts_begin->id());
+        }
+      }
     }
 
     void after_insertion(Vertex_handle v) const {
@@ -841,6 +855,9 @@ protected:
         std::cerr << "  new vertex " << display_vert(v) << '\n';
       }
       return true;
+    } else if(debug().subconstraints_to_conform()) {
+      std::cerr << "conform_subconstraint>> subconstraint " << display_subcstr(subconstraint)
+                << " is already an edge in the triangulation.\n";
     }
 
     return false;
@@ -1113,9 +1130,16 @@ protected:
     return compute_projected_point_with_threshold(
         start_pt, end_pt, start_pt, end_pt,
         std::forward<LambdaComputer>(lambda_computer),
-        [](auto lambda, const std::optional<Point>&) {
+        [this](auto lambda, const std::optional<Point>&) {
           // Only need lambda for this threshold check
-          return lambda < 0.2 || lambda > 0.8;
+          bool use_midpoint = lambda < 0.2 || lambda > 0.8;
+          if(this->debug().Steiner_points_construction()) {
+            std::cerr << "  lambda = " << lambda << '\n';
+            if(use_midpoint) {
+              std::cerr << "  -> using midpoint instead of projection\n";
+            }
+          }
+          return use_midpoint;
         });
   }
 
@@ -1252,9 +1276,6 @@ protected:
         });
 
     if(debug().Steiner_points_construction()) {
-      const auto vector_a_ref = vector_functor(pa, reference_point);
-      const auto lambda = gt.compute_scalar_product_3_object()(vector_a_ref, vector_ab) / sq_length_functor(vector_ab);
-      std::cerr << "  lambda = " << lambda << '\n';
       std::cerr << "  -> Steiner point: " << result_point << '\n';
     }
     return {exact(result_point), reference_vertex->cell(), reference_vertex};

@@ -1317,6 +1317,13 @@ private:
   static_assert(CGAL::cdt_3_msvc_2019_or_older() || CGAL::is_nothrow_movable_v<CDT_2>);
 
 protected:
+  struct Null_normal_error : Error_exception {
+    Null_normal_error(std::string msg, std::string file, int line)
+        : Error_exception("CGAL CDT_3", msg, file, line)
+    {
+    }
+  };
+
   struct PLC_error : Error_exception {
     int face_index;
     int region_index;
@@ -2189,14 +2196,20 @@ private:
       std::cerr << "Polygon #" << polygon_constraint_id << " normal is: " << cdt_2.geom_traits().normal() << '\n';
        dump_face_polygons(vec_of_handles, polygon_constraint_id);
     }
+
+    if(cdt_2.geom_traits().normal() == CGAL::NULL_VECTOR) {
+      throw Null_normal_error{"cannot build CDT_2 for polygonal constraint #" + std::to_string(polygon_constraint_id) +
+                                  " because its constructed normal vector is null.",
+                              __FILE__, __LINE__};
+    }
     // create and fill the 2D triangulation
     {
       auto insert_constraint_in_cdt_2 = [&](const auto& va, const auto& vb) {
         if(this->debug().input_faces()) {
           std::cerr << "cdt_2.insert_constraint ("
-                    << tr().point(va->info().vertex_handle_3d)
+                    << IO::oformat(va->info().vertex_handle_3d, with_point_and_info)
                     << " , "
-                    << tr().point(vb->info().vertex_handle_3d)
+                    << IO::oformat(vb->info().vertex_handle_3d, with_point_and_info)
                     << ")\n";
         }
         auto cstr_id = cdt_2.insert_constraint(va, vb);
@@ -2863,7 +2876,8 @@ private:
 
     std::stack<std::pair<Facet, int>> stack;
     stack.push({border_facet_above, 1});
-    auto erased = remaining_facets_of_border.erase(border_facet_above);
+    CGAL_assertion_code(auto erased =)
+    remaining_facets_of_border.erase(border_facet_above);
     CGAL_assertion(erased > 0);
     while(!stack.empty()) {
       const auto [facet, above_below] = stack.top();
@@ -3025,7 +3039,7 @@ private:
                               CDT_2& non_const_cdt_2, Fh_region& non_const_fh_region)
   {
     if(this->debug().regions()) {
-      auto guard_color = CGAL::IO::make_color_guards(CGAL::IO::Ansi_color::Yellow, std::cerr);
+      auto guard_color = CGAL::IO::make_color_guards<CGAL::IO::Ansi_color::Yellow>(std::cerr);
       std::cerr << "restore_subface_region face index: " << face_index << ", region #" << region_index << "\n";
     }
     auto guard_indenting = CGAL::IO::make_indenting_guards("| ", std::cerr, std::cout);
@@ -3268,7 +3282,7 @@ private:
         std::cerr << "\n";
       }
       std::cerr << "  Vertices:\n";
-      for(const auto& v : original_vertices_of_lower_cavity) {
+      for(const auto& v : std::set(original_vertices_of_lower_cavity.begin(), original_vertices_of_lower_cavity.end())) {
         std::cerr << "    " << IO::oformat(v, with_point_and_info) << "\n";
       }
       std::cerr << "Upper cavity:\n";
@@ -3282,7 +3296,7 @@ private:
         std::cerr << "\n";
       }
       std::cerr << "  Vertices:\n";
-      for(const auto& v : original_vertices_of_upper_cavity) {
+      for(const auto& v : std::set(original_vertices_of_upper_cavity.begin(), original_vertices_of_upper_cavity.end())) {
         std::cerr << "    " << IO::oformat(v, with_point_and_info) << "\n";
       }
     }
@@ -3386,8 +3400,12 @@ private:
       throw Next_region{"missing facet in polygon", fh_region[0]};
     }
 
-    insert_in_conflict_visitor.process_cells_in_conflict(cells_of_upper_cavity.begin(), cells_of_upper_cavity.end());
-    insert_in_conflict_visitor.process_cells_in_conflict(cells_of_lower_cavity.begin(), cells_of_lower_cavity.end());
+    {
+      std::vector<Cell_handle> all_cells_in_conflict(cells_of_upper_cavity.size() + cells_of_lower_cavity.size());
+      auto it = std::copy(cells_of_upper_cavity.begin(), cells_of_upper_cavity.end(), all_cells_in_conflict.begin());
+      std::copy(cells_of_lower_cavity.begin(), cells_of_lower_cavity.end(), it);
+      insert_in_conflict_visitor.process_cells_in_conflict(all_cells_in_conflict.begin(), all_cells_in_conflict.end());
+    }
 
     if(this->debug().copy_triangulation_into_hole()) {
       std::cerr << "# glu the upper triangulation of the cavity\n";
@@ -3946,7 +3964,10 @@ private:
     CDT_2& non_const_cdt_2 = this->non_const_face_cdt_2(face_index);
     const CDT_2& cdt_2 = non_const_cdt_2;
     if constexpr (cdt_3_can_use_cxx20_format())
-      if(this->debug().copy_triangulation_into_hole() || this->debug().verbose_special_cases()) {
+      if(this->debug().copy_triangulation_into_hole() || this->debug().verbose_special_cases() ||
+         this->debug().restore_faces())
+      {
+        auto guard_color = CGAL::IO::make_color_guards<CGAL::IO::Ansi_color::Green>(std::cerr);
         std::cerr << cdt_3_format("restore_face({}): CDT_2 has {} vertices\n", face_index, cdt_2.number_of_vertices());
       }
     for(const auto& edge : cdt_2.finite_edges()) {
@@ -4180,6 +4201,11 @@ public:
         std::cerr << "ERROR: Intersection of constraints in face F#" << i << "\n";
         this->face_data[i].skip_face = true;
         dump_face_polygons(build_face_border_handles(face_borders(i)), i);
+      } catch (Null_normal_error& e) {
+        std::cerr << std::string("ERROR: face F#") << std::to_string(i) + " has is degenerated.\n";
+        std::cerr << "  details: " << e.what() << "\n";
+        this->face_data[i].skip_face = true;
+        dump_face_polygons(build_face_border_handles(face_borders(i)), i);
       }
     }
     if(this->debug().input_faces()) {
@@ -4338,7 +4364,10 @@ public:
 
     auto test_edge = [&](Cell_handle cell, Vertex_handle v0, int index_v0, Vertex_handle v1, int index_v1)
     {
-      auto value_returned = [this, v0, v1](bool b, bool not_visited, std::array<Vertex_handle, 3> triangle_vertices = {}) {
+      auto value_returned =
+          [this, v0, v1](bool b, bool not_visited,
+                         std::array<Vertex_handle, 3> triangle_vertices = std::array<Vertex_handle, 3>())
+      {
         if constexpr (cdt_3_can_use_cxx20_format()) if(this->debug().regions()) {
           std::cerr << cdt_3_format("test_edge {}   {}   return {} {}\n",
                                     IO::oformat(v0, with_point_and_info),
@@ -4372,6 +4401,18 @@ public:
                                               {cell, index_v0, index_v1}, triangle_vertices);
         }
 
+        if(this->constraint_hierarchy.is_subconstraint(v0, v1)) {
+          std::stringstream ss;
+          ss.precision(std::cerr.precision());
+          ss << "Error: detected a self-intersection.\n"
+                 "  The constrained edge (" << IO::oformat(v0, with_point_and_info)
+             << ", " << IO::oformat(v1, with_point_and_info)
+             << ") intersects the interior of the polygonal constraint #" << face_index
+             << " (sub-region #" << region_index << ").\n"
+             << "  The input data is either self-intersecting or the input"
+                " refined with Steiner vertices is self-intersecting.\n";
+          CGAL_error_msg(ss.str().c_str());
+        }
         intersecting_edges.emplace_back(cell, index_v0, index_v1);
         intersected_triangles.push_back(triangle_vertices);
         cached_value_it->second = true;
@@ -5069,23 +5110,77 @@ auto get_remeshing_triangulation(Conforming_constrained_Delaunay_triangulation_3
     }
   } else {
     for(auto ch : tr.all_cell_handles()) {
-      ch->set_subdomain_index(1);
+      ch->set_subdomain_index(-1);
     }
 
-    std::stack<decltype(tr.infinite_cell())> stack;
-    stack.push(tr.infinite_cell());
-    while(!stack.empty()) {
-      auto ch = stack.top();
-      stack.pop();
-      ch->set_subdomain_index(0);
-      for(int i = 0; i < 4; ++i) {
-        if(ch->ccdt_3_data().is_facet_constrained(i))
-          continue;
-        auto n = ch->neighbor(i);
-        if(n->subdomain_index() == 1) {
-          stack.push(n);
+    // Use a flood algorithm to mark constrained connected components.
+    // The connected component containing the infinite vertex is marked with index 0.
+    // Nested components are marked with increasing indices.
+    // Disconnected components that have the same nesting level get the same index parity:
+    // for example two cubes within a larger bounding box will be index 2 and 4.
+    std::stack<typename Tr::Facet> border;
+    int next_even_subdomain = 0;
+    int next_odd_subdomain = 1;
+
+    // Function to flood-fill a connected component with a given subdomain index
+    auto flood_component = [&border](typename Tr::Cell_handle start, int subdomain_index) {
+      if(start->subdomain_index() != -1)
+        return;
+
+      std::stack<typename Tr::Cell_handle> queue;
+      queue.push(start);
+
+      while(!queue.empty()) {
+        auto ch = queue.top();
+        queue.pop();
+        if(ch->subdomain_index() == -1) {
+          ch->set_subdomain_index(subdomain_index);
+          for(int i = 0; i < 4; i++) {
+            typename Tr::Facet f(ch, i);
+            auto n = ch->neighbor(i);
+            if(n->subdomain_index() == -1) {
+              if(ch->ccdt_3_data().is_facet_constrained(i))
+                border.push(f);
+              else
+                queue.push(n);
+            }
+          }
         }
       }
+    };
+
+    // Start with the infinite cell's component using index 0
+    flood_component(tr.infinite_cell(), next_even_subdomain);
+    next_even_subdomain += 2;
+
+    for (;;) { // while there are unvisited cells
+      while(!border.empty()) {
+        auto f = border.top();
+        border.pop();
+        auto n = f.first->neighbor(f.second);
+        if(n->subdomain_index() == -1) {
+          // If we are coming from an even subdomain, use next odd, and vice versa
+          bool from_even = (f.first->subdomain_index() % 2 == 0);
+          int next_index = from_even ? next_odd_subdomain : next_even_subdomain;
+          flood_component(n, next_index);
+          if(from_even)
+            next_odd_subdomain += 2;
+          else
+            next_even_subdomain += 2;
+        }
+      }
+
+      bool found_unvisited = false;
+      for(auto ch : tr.finite_cell_handles()) {
+        if(ch->subdomain_index() == -1) {
+          flood_component(ch, next_even_subdomain);
+          next_even_subdomain += 2;
+          found_unvisited = true;
+          break;
+        }
+      }
+      if(!found_unvisited)
+        break;
     }
 
     for(auto f : tr.finite_facets())

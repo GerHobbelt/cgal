@@ -29,10 +29,9 @@
 #include <CGAL/tags.h>
 
 #include <boost/iterator/filter_iterator.hpp>
-
 #include <boost/iterator/transform_iterator.hpp>
+
 #include <iterator>
-#include <limits>
 #include <optional>
 #include <stack>
 #include <type_traits>
@@ -121,10 +120,10 @@ namespace Mesh_2 {
       const Vertex_handle& mvi = tr.tds().mirror_vertex(fh, i);
 
       return( ( tr.is_infinite(vi) ||
-                this->operator()(tr, va, vb, vi->point()) )
+                this->operator()(tr, va, vb, vi->point(), vi) )
               &&
               ( tr.is_infinite(mvi) ||
-                this->operator()(tr, va, vb, mvi->point()) )
+                this->operator()(tr, va, vb, mvi->point(), mvi) )
               );
     }
 
@@ -149,12 +148,14 @@ namespace Mesh_2 {
     bool operator()(const Tr& tr,
                     const Face_handle& fh,
                     const int i,
-                    const Point& p) const
+                    const Point& p,
+                    Vertex_handle encroaching_vertex = Vertex_handle()) const
     {
       return this->operator()(tr,
                               fh->vertex(tr. cw(i)),
                               fh->vertex(tr.ccw(i)),
-                              p);
+                              p,
+                              encroaching_vertex);
     }
 
     /**
@@ -164,7 +165,8 @@ namespace Mesh_2 {
     bool operator()(const Tr& tr,
                     const Vertex_handle& va,
                     const Vertex_handle& vb,
-                    const Point& p) const
+                    const Point& p,
+                    [[maybe_unused]] Vertex_handle encroaching_vertex = Vertex_handle()) const
       {
         typedef typename Geom_traits::Angle_2 Angle_2;
 
@@ -173,7 +175,20 @@ namespace Mesh_2 {
         const Point& a = va->point();
         const Point& b = vb->point();
 
-        return( angle(a, p, b) == ACUTE );
+        auto is_conform = ( angle(a, p, b) != OBTUSE );
+#if CGAL_MESH_2_DEBUG_BAD_EDGES
+        if(!is_conform) {
+          std::cerr << "  edge " << CGAL::IO::oformat(va, CGAL::With_point_tag{})
+                    << " -- " << CGAL::IO::oformat(vb, CGAL::With_point_tag{})
+                    << " is encroached by ";
+          if(encroaching_vertex != Vertex_handle()) {
+            std::cerr << IO::oformat(encroaching_vertex, With_point_tag{}) << std::endl;
+          } else {
+            std::cerr << "point " << CGAL::IO::oformat(p) << std::endl;
+          }
+        }
+#endif // CGAL_MESH_2_DEBUG_BAD_EDGES
+        return is_conform;
       }
   };
 
@@ -339,6 +354,9 @@ protected:
   template <typename Constraint_hierarchy_tag>
   void scan_triangulation_impl(Constraint_hierarchy_tag)
   {
+    if(tr.dimension() < 2)
+      return;
+
     // general case (no constraint hierarchy)
 
     for(Finite_edges_iterator ei = tr.finite_edges_begin();
@@ -355,6 +373,9 @@ protected:
 
   void scan_triangulation_impl(Tag_true)
   {
+    if(tr.dimension() < 2)
+      return;
+
     for(const auto& [v1, v2] : tr.subconstraints())
     {
       if(!is_locally_conform(tr, v1, v2) ){
@@ -609,43 +630,68 @@ protected:
               << IO::oformat(vb, With_point_tag{}) << ") = ";
     std::cerr << p << '\n';
 #endif // CGAL_MESH_2_DEBUG_REFINEMENT_POINTS
-    if constexpr(std::is_floating_point_v<FT>) {
-      Is_locally_conforming_Gabriel<Tr> is_locally_conforming_Gabriel{};
-      constexpr FT max = (std::numeric_limits<FT>::max)();
-      auto ulp = [max](const FT& x) { return std::nextafter(x, max) - x; };
-      auto sq_delta = 16 * CGAL::square((std::min)(ulp(p.x()), ulp(p.y())));
+    return maybe_snap_to_existing_vertex(edge, p);
+  }
 
-      typename Tr::Segment ab(this->va->point(), this->vb->point());
-      std::optional<FT> min_height_squared;
-      Vertex_handle closest_encroaching_vertex;
-      auto e = edge;
-      for(int i = 0; i < 2; ++i, e = triangulation_ref_impl().mirror_edge(e)) {
-        auto [c, index] = e;
-        if(triangulation_ref_impl().is_infinite(c))
-          continue;
-        auto cp = c->vertex(index)->point();
-        if(is_locally_conforming_Gabriel(triangulation_ref_impl(), c, index, cp))
-          continue;
-        auto height_squared = squared_distance(cp, ab);
-        if(!min_height_squared || height_squared < *min_height_squared) {
-          closest_encroaching_vertex = c->vertex(index);
-          min_height_squared = height_squared;
-        }
-      }
-      if(min_height_squared) {
-        FT edge_length_squared = squared_distance(this->va->point(), this->vb->point());
-        if(*min_height_squared * FT(10000) < edge_length_squared && *min_height_squared < sq_delta) {
-          // the angle is smaller than approx 0.5 degree, and the distance is very small
-          // so we consider that the point is aligned with ab
-#ifdef CGAL_MESH_2_DEBUG_REFINEMENT_POINTS
-          std::cerr << "return point of existing vertex " << IO::oformat(closest_encroaching_vertex, With_point_tag{})
-                    << std::endl;
-#endif // CGAL_MESH_2_DEBUG_REFINEMENT_POINTS
-          return closest_encroaching_vertex->point();
-        }
+  auto get_closest_encroaching_vertex(Edge e) const {
+    struct Result {
+      Vertex_handle vertex;
+      FT squared_distance;
+    };
+    std::optional<Result> result;
+    Is_locally_conforming_Gabriel<Tr> is_locally_conforming_Gabriel{};
+
+    for(int i = 0; i < 2; ++i, e = tr.mirror_edge(e)) {
+      auto [c, index] = e;
+      if(tr.is_infinite(c))
+        continue;
+      auto v = c->vertex(index);
+      auto p = v->point();
+      if(is_locally_conforming_Gabriel(tr, c, index, p, v))
+        continue;
+      auto va = e.first->vertex(tr.cw (e.second));
+      auto vb = e.first->vertex(tr.ccw(e.second));
+      typename Tr::Segment ab(va->point(), vb->point());
+      auto height_squared = squared_distance(p, ab);
+      if(!result || height_squared < result->squared_distance) {
+        result = Result{c->vertex(index), height_squared};
       }
     }
+    return result;
+  }
 
+  Point maybe_snap_to_existing_vertex(const Edge& edge, Point p) const {
+    if constexpr(std::is_floating_point_v<FT>) {
+      auto cstr_bbox = tr.geom_traits().construct_bbox_2_object();
+      auto do_intersect = tr.geom_traits().do_intersect_2_object();
+      auto va = edge.first->vertex(tr.cw (edge.second));
+      auto vb = edge.first->vertex(tr.ccw(edge.second));
+
+      auto closest_encroaching_vertex = get_closest_encroaching_vertex(edge);
+      if(!closest_encroaching_vertex) {
+        return p;
+      }
+      FT edge_length_squared = squared_distance(va->point(), vb->point());
+      if(closest_encroaching_vertex->squared_distance * FT(10000) > edge_length_squared) {
+        return p;
+      }
+
+      // here, the angle is smaller than approx 0.5 degree, and the distance is very small
+      // so we consider that the point is aligned with ab
+
+      auto bbox = cstr_bbox(closest_encroaching_vertex->vertex->point());
+      bbox.dilate(4);
+      if(do_intersect(bbox, typename Tr::Segment(va->point(), vb->point()))
+         )
+      {
+#ifdef CGAL_MESH_2_DEBUG_REFINEMENT_POINTS
+        std::cerr << "return point of existing vertex "
+                  << IO::oformat(closest_encroaching_vertex->vertex, With_point_tag{}) << std::endl;
+  #endif // CGAL_MESH_2_DEBUG_REFINEMENT_POINTS
+        p = closest_encroaching_vertex->vertex->point();
+        return p;
+      }
+    }
     return p;
   }
 

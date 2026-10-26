@@ -7,6 +7,8 @@ project(Snap_rounding_2_Tests)
 find_package(CGAL REQUIRED)
 
 create_single_source_cgal_program(test_snap_rounding_2.cpp NO_TESTING)
+create_single_source_cgal_program(test_float_snap_rounding_2.cpp)
+create_single_source_cgal_program(test_float_snap_rounding_2_concept.cpp)
 
 function(add_Snap_rounding_tests name)
   set(data_dir "data")
@@ -26,7 +28,7 @@ function(add_Snap_rounding_tests name)
       TEST "${test_name}_compare_results"
       APPEND
       PROPERTY DEPENDS "${test_name}")
-    if(POLICY CMP0066) # CMake 3.7 or later
+    if(POLICY CMP0066) # CMake 3.7 (or greater)
       set_property(TEST "${test_name}" PROPERTY FIXTURES_SETUP
                                                 "${test_name}_compare_results")
       set_property(TEST "${test_name}_compare_results" APPEND

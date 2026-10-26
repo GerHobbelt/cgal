@@ -15,14 +15,15 @@
 
 #include <CGAL/license/Mesh_2.h>
 
-#include <CGAL/boost/graph/graph_traits_Constrained_Delaunay_triangulation_2.h>
-#include <CGAL/boost/graph/IO/OFF.h>
+#include <CGAL/assertions.h>
 #include <CGAL/boost/iterator/transform_iterator.hpp>
 #include <CGAL/Double_map.h>
 #include <CGAL/enum.h>
 #include <CGAL/functional.h>
-#include <CGAL/IO/io.h>
-#include <CGAL/IO/OFF.h>
+#if defined(CGAL_MESH_2_DEBUG_BAD_FACES) || defined(CGAL_MESH_2_DEBUG_REFINEMENT_POINTS) || \
+    defined(CGAL_MESH_2_DEBUG_INSERTIONS)
+#  include <CGAL/IO/io.h>
+#endif
 #include <CGAL/Mesh_2/Face_badness.h>
 #include <CGAL/Mesher_level_default_implementations.h>
 #include <CGAL/Mesher_level.h>
@@ -30,6 +31,7 @@
 #include <CGAL/Named_function_parameters.h>
 
 #include <boost/iterator/transform_iterator.hpp>
+#include <boost/math/special_functions/next.hpp>
 
 #include <iostream>
 #include <sstream>
@@ -173,13 +175,6 @@ public:
     Face_handle fh = bad_faces.front()->second;
     current_badness = is_bad(bad_faces.front()->first);
 
-    CGAL_assertion_code
-      (typename Geom_traits::Orientation_2 orientation =
-       triangulation_ref_impl().geom_traits().orientation_2_object()
-       );
-    CGAL_assertion(orientation(fh->vertex(0)->point(),
-                               fh->vertex(1)->point(),
-                               fh->vertex(2)->point()) != COLLINEAR );
     return fh;
   }
 
